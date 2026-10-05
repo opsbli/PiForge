@@ -286,16 +286,37 @@ function mcpConfigResult(error?: string): McpConfigResult {
   return { ok: !error, error, config: readMcpConfig(mcpContext()) }
 }
 
-/** 可用模型清单（来自共享的模型运行时） */
+/**
+ * 可用模型清单（来自共享的模型运行时）。
+ *
+ * 只列「有凭证可用」的 provider/模型：全量目录（catalog）包含几十个 provider，
+ * 未配置凭证的选中后会在调用阶段鉴权失败，因此按 getAvailableSnapshot 过滤。
+ * 当前选中模型始终在列，避免凭证快照落后时选择器里找不到当前项。
+ */
 function listModels(): ModelListItem[] {
   if (!modelRuntime) return []
   try {
-    return modelRuntime.getModels().map((model) => ({
+    const items = modelRuntime.getAvailableSnapshot().map((model) => ({
       providerId: String(model.provider),
       id: model.id,
       name: model.name,
       reasoning: Boolean(model.reasoning)
     }))
+    const currentIncluded = items.some(
+      (item) => item.providerId === modelSelection.providerId && item.id === modelSelection.modelId
+    )
+    if (!currentIncluded) {
+      const current = modelRuntime.getModel(modelSelection.providerId, modelSelection.modelId)
+      if (current) {
+        items.unshift({
+          providerId: String(current.provider),
+          id: current.id,
+          name: current.name,
+          reasoning: Boolean(current.reasoning)
+        })
+      }
+    }
+    return items
   } catch {
     return []
   }

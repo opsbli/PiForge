@@ -274,7 +274,11 @@ function ModelPicker(): JSX.Element {
             </div>
           </div>
           <div className="max-h-72 overflow-y-auto p-1">
-            {grouped.length === 0 ? (
+            {models.length === 0 ? (
+              <p className="px-2 py-3 text-center text-[11px] leading-relaxed text-muted-foreground">
+                没有可用模型：尚未为任何 provider 配置凭证
+              </p>
+            ) : grouped.length === 0 ? (
               <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">没有匹配的模型</p>
             ) : (
               grouped.map(([provider, list]) => (
@@ -306,6 +310,11 @@ function ModelPicker(): JSX.Element {
               ))
             )}
           </div>
+          {models.length > 0 && (
+            <p className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+              仅列出已配置凭证的模型
+            </p>
+          )}
         </Popover>
       )}
     </div>
