@@ -201,7 +201,7 @@ export function ModelSection(): JSX.Element {
                   )}
                 </div>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={provider.baseUrl}>
-                  {provider.id} · {provider.baseUrl || '未设置 Base URL'} ·{' '}
+                  {provider.baseUrl || '未设置 Base URL'} ·{' '}
                   {provider.models.filter((model) => model.enabled).length} 个模型
                 </p>
               </div>

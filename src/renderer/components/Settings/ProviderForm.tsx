@@ -43,7 +43,6 @@ export function ProviderForm({
   onCancel: () => void
   onSaved: () => void
 }): JSX.Element {
-  const [id, setId] = useState(provider?.id ?? '')
   const [templateId, setTemplateId] = useState(provider?.templateProviderId ?? '')
   const [name, setName] = useState(provider?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? '')
@@ -67,7 +66,6 @@ export function ProviderForm({
     if (!baseUrl.trim()) setBaseUrl(template.baseUrl)
     if (!api.trim()) setApi(template.api)
     if (!name.trim()) setName(`${template.name}（自定义）`)
-    if (!id.trim()) setId(template.id)
   }
 
   const addModel = (entry: CustomModelEntry): void => {
@@ -122,17 +120,13 @@ export function ProviderForm({
   }
 
   const save = async (): Promise<void> => {
-    if (!id.trim()) {
-      setFeedback({ tone: 'error', text: '请填写 provider id' })
-      return
-    }
     setBusy('save')
     setFeedback(null)
     try {
       await window.piforge.saveCustomProvider({
+        id: provider?.id,
         provider: {
-          id: id.trim(),
-          name: name.trim() || id.trim(),
+          name: name.trim() || '未命名供应商',
           templateProviderId: templateId || null,
           baseUrl,
           api,
@@ -189,16 +183,7 @@ export function ProviderForm({
             </select>
           </Field>
 
-          <Field label="供应商 ID" hint="写入 models.json 的 provider id；同 id 会覆盖">
-            <Input
-              className="h-8 text-xs"
-              value={id}
-              placeholder="例如 my-anthropic"
-              onChange={(event) => setId(event.target.value)}
-            />
-          </Field>
-
-          <Field label="供应商名称">
+          <Field label="供应商名称" hint="用于生成内部标识；重名会自动追加后缀">
             <Input
               className="h-8 text-xs"
               value={name}

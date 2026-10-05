@@ -801,7 +801,9 @@ export interface ProviderTemplate {
 
 /** 保存自定义 provider；apiKey 为 null/省略时保留已存密钥，空字符串表示不设置 */
 export interface SaveProviderRequest {
-  provider: Omit<CustomProvider, 'hasApiKey'>
+  /** 编辑时的原 provider id；新建时省略，由名称自动派生 */
+  id?: string
+  provider: Omit<CustomProvider, 'hasApiKey' | 'id'>
   apiKey?: string | null
 }
 

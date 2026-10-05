@@ -84,6 +84,29 @@ function withHasKey(provider: StoredProvider): CustomProvider {
   return { ...provider, hasApiKey: Boolean(keys[provider.id]) }
 }
 
+/** 由名称派生 provider id：只保留 ASCII 字母数字，其余折叠为连字符 */
+function slugify(name: string, fallback: string): string {
+  const ascii = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    // 去除非 ASCII（含 CJK）字符：id 会作为 models.json 的键，保持 ASCII 更稳妥
+    .replace(/[^\x20-\x7e]/g, '')
+  const slug = ascii
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || fallback
+}
+
+/** 保证 id 在现有配置中唯一，重名追加 -2 / -3 */
+function uniqueId(base: string): string {
+  const taken = new Set(providers.map((provider) => provider.id))
+  if (!taken.has(base)) return base
+  let index = 2
+  while (taken.has(`${base}-${index}`)) index += 1
+  return `${base}-${index}`
+}
+
 export function listProviders(): CustomProvider[] {
   return providers.map(withHasKey)
 }
@@ -95,8 +118,16 @@ export function getProviderKeys(): Record<string, string> {
 
 export function saveProvider(request: SaveProviderRequest): CustomProvider[] {
   const incoming = request.provider
-  const id = incoming.id.trim()
-  if (!id) throw new Error('provider id 不能为空')
+  // 编辑时沿用原 id（密钥与 models.json 映射保持稳定）；新建时由名称派生
+  const editingId = request.id?.trim()
+  const id =
+    editingId ||
+    uniqueId(
+      slugify(
+        incoming.name,
+        incoming.templateProviderId ? `${incoming.templateProviderId}-custom` : 'custom-provider'
+      )
+    )
 
   const next: StoredProvider = {
     id,
