@@ -4,6 +4,7 @@ import { IPC } from '../shared/ipc-types'
 import type { SessionSummary, SessionListItem, ApprovalRequest, TreeEntry } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 import { resolveApiKey } from './credentials'
+import { beginTrace, endTrace, recordToolSpan, getStats } from './trace-store'
 
 type AgentOutbound =
   | { type: 'ready' }
@@ -24,6 +25,7 @@ export class AgentHost {
   private ready = false
   private pendingPrompts: string[] = []
   private requestSeq = 0
+  private sessionId: string | null = null
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
@@ -56,6 +58,12 @@ export class AgentHost {
     if (!this.ready || !this.child) {
       this.pendingPrompts.push(text)
       return
+    }
+    // 开始一次 trace（本地可观测性）
+    try {
+      beginTrace(this.sessionId ?? 'current', 'deepseek-flash', text)
+    } catch {
+      // trace 失败不影响对话
     }
     this.child.postMessage({ type: 'prompt', text })
   }
@@ -161,10 +169,31 @@ export class AgentHost {
         for (const text of queued) this.prompt(text)
         break
       }
-      case 'event':
+      case 'event': {
+        // 本地可观测性：记录工具 span 与 trace 结束
+        try {
+          if (message.event.type === 'tool_call_end') {
+            recordToolSpan(
+              message.event.callId,
+              'tool',
+              undefined,
+              message.event.result,
+              message.event.ok,
+              message.event.error
+            )
+          } else if (message.event.type === 'turn_end') {
+            endTrace('ok')
+          } else if (message.event.type === 'error') {
+            endTrace('error')
+          }
+        } catch {
+          // trace 失败不影响对话
+        }
         this.broadcast(message.event)
         break
+      }
       case 'summary': {
+        this.sessionId = message.summary.sessionId
         const waiter = this.summaryWaiters.get(message.requestId)
         if (waiter) {
           this.summaryWaiters.delete(message.requestId)

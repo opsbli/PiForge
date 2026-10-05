@@ -87,6 +87,11 @@ const api: PiForgeApi = {
     }
   },
 
+  // ---- 可观测性 ----
+  listTraces: (limit?: number) => ipcRenderer.invoke(IPC.TRACE_LIST, limit),
+  listSpans: (traceId: string) => ipcRenderer.invoke(IPC.TRACE_SPANS, traceId),
+  getTraceStats: () => ipcRenderer.invoke(IPC.TRACE_STATS),
+
   // ---- 沙箱 ----
   getSandboxStatus: () => ipcRenderer.invoke(IPC.SANDBOX_STATUS),
   detectDocker: () => ipcRenderer.invoke(IPC.SANDBOX_DETECT),

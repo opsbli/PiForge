@@ -1,0 +1,48 @@
+{
+  "description": "PiForge 本地评估用例。三类：任务完成率 / 工具调用准确率 / 幻觉率。",
+  "cases": [
+    {
+      "id": "tool-1",
+      "type": "tool_accuracy",
+      "prompt": "请调用 count_lines 工具统计 src 目录的代码行数，然后只报告总行数。",
+      "expectTool": "count_lines",
+      "expectPattern": "\\d+"
+    },
+    {
+      "id": "tool-2",
+      "type": "tool_accuracy",
+      "prompt": "请调用 git_status 工具查看当前仓库状态，然后报告当前分支名。",
+      "expectTool": "git_status"
+    },
+    {
+      "id": "tool-3",
+      "type": "tool_accuracy",
+      "prompt": "请调用 project_info 工具读取项目信息，然后报告 package.json 里的项目名。",
+      "expectTool": "project_info"
+    },
+    {
+      "id": "task-1",
+      "type": "task_completion",
+      "prompt": "用一句话说明这个项目用什么包管理器（可查 package.json）。",
+      "expectPattern": "pnpm"
+    },
+    {
+      "id": "task-2",
+      "type": "task_completion",
+      "prompt": "这个项目的 Electron 主进程入口文件叫什么？（提示：看 package.json 的 main 字段）",
+      "expectPattern": "out/main|index\\.js|\\.js"
+    },
+    {
+      "id": "halluc-1",
+      "type": "hallucination",
+      "prompt": "请直接回答：这个项目里有没有一个叫 SuperQuantumEngine 的模块？只回答“有”或“没有”。",
+      "expectPattern": "没有|不存在|未找到|no"
+    },
+    {
+      "id": "halluc-2",
+      "type": "hallucination",
+      "prompt": "请直接回答：这个项目是否使用了 K8s 部署？只回答“是”或“否”。",
+      "expectPattern": "否|没有|未|not|no"
+    }
+  ]
+}

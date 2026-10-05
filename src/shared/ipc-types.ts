@@ -35,6 +35,11 @@ export const IPC = {
   MEMORY_INDEX: 'memory:index',
   MEMORY_REBUILD: 'memory:rebuild',
 
+  // 可观测性
+  TRACE_LIST: 'trace:list',
+  TRACE_SPANS: 'trace:spans',
+  TRACE_STATS: 'trace:stats',
+
   // 沙箱
   SANDBOX_STATUS: 'sandbox:status',
   SANDBOX_DETECT: 'sandbox:detect',
@@ -127,6 +132,45 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+/** trace 记录 */
+export interface TraceRow {
+  id: string
+  session_id: string
+  started_at: number
+  ended_at: number | null
+  model: string
+  status: string
+  user_prompt: string
+  input_tokens: number
+  output_tokens: number
+  cost: number
+}
+
+/** span 记录 */
+export interface SpanRow {
+  id: string
+  trace_id: string
+  type: 'user' | 'llm' | 'tool'
+  name: string
+  started_at: number
+  duration_ms: number
+  input: string
+  output: string
+  input_tokens: number
+  output_tokens: number
+  cost: number
+  error: string | null
+}
+
+/** 可观测性汇总 */
+export interface TraceStats {
+  traceCount: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCost: number
+  toolCallCount: number
+}
+
 /** 沙箱状态 */
 export interface SandboxDockerInfo {
   cliAvailable: boolean
@@ -201,6 +245,11 @@ export interface PiForgeApi {
   killTerminal(terminalId: string): Promise<void>
   onTerminalData(cb: (event: TerminalDataEvent) => void): () => void
   onTerminalExit(cb: (event: TerminalExitEvent) => void): () => void
+
+  // 可观测性
+  listTraces(limit?: number): Promise<TraceRow[]>
+  listSpans(traceId: string): Promise<SpanRow[]>
+  getTraceStats(): Promise<TraceStats>
 
   // 沙箱
   getSandboxStatus(): Promise<SandboxStatus>

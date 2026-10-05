@@ -23,3 +23,12 @@ pnpm-debug.log*
 
 # Pi 项目本地配置与记忆（用户数据）
 .pi/
+
+# pax-family 产物目录（构建/规划/评审/文档产物，属可再生产出；
+# AGENTS.md 不忽略，作为协作规范纳入版本控制）
+.pax/
+
+# 本地评估结果库
+eval/*.db
+eval/*.db-wal
+eval/*.db-shm
