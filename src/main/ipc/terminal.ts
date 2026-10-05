@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import * as pty from 'node-pty'
 import { IPC } from '../../shared/ipc-types'
 import { getWorkspace } from '../workspace'
@@ -8,6 +8,11 @@ import { getWorkspace } from '../workspace'
  *
  * 每个终端是一个真实 pty，cwd 限制在当前工作区。
  * 数据通过 TERMINAL_DATA 事件流回渲染进程。
+ *
+ * 生命周期绑定：终端归属于创建它的 webContents，窗口销毁时立即结束对应 pty。
+ * 窗口销毁后 pty 仍可能推出最后一批数据（shell 收尾、kill 产生的输出），
+ * 因此发送前必须检查 isDestroyed —— 长期持有 BrowserWindow 引用再读
+ * `.webContents` 会直接抛 "Object has been destroyed"，可选链也拦不住。
  */
 
 const terminals = new Map<string, pty.IPty>()
@@ -33,13 +38,30 @@ export function registerTerminalIpc(): void {
     })
     terminals.set(id, term)
 
-    const win = BrowserWindow.fromWebContents(event.sender)
+    // 用 WebContents 本身而非 BrowserWindow 引用：后者的 webContents 取值在销毁后会抛错
+    const sender = event.sender
+    const send = (channel: string, payload: unknown): void => {
+      if (!sender.isDestroyed()) sender.send(channel, payload)
+    }
+
     term.onData((data) => {
-      win?.webContents.send(IPC.TERMINAL_DATA, { terminalId: id, data })
+      send(IPC.TERMINAL_DATA, { terminalId: id, data })
     })
     term.onExit(({ exitCode }) => {
-      win?.webContents.send(IPC.TERMINAL_EXIT, { terminalId: id, exitCode })
+      send(IPC.TERMINAL_EXIT, { terminalId: id, exitCode })
       terminals.delete(id)
+    })
+
+    // 窗口销毁即结束该终端：此后输出已无处送达，让 shell 进程继续跑只会积累异常
+    sender.once('destroyed', () => {
+      const owned = terminals.get(id)
+      if (!owned) return
+      terminals.delete(id)
+      try {
+        owned.kill()
+      } catch {
+        // pty 已自行退出
+      }
     })
 
     return id
