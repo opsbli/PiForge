@@ -5,6 +5,7 @@ import {
   emptySettingsSnapshot,
   settingsPaths
 } from './settings-service'
+import { applySettingsWrite } from './settings-write'
 import { emptyResourcesSnapshot } from './resources-service'
 import { buildTrustSnapshot, emptyTrustSnapshot } from './trust-service'
 import type { ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
@@ -14,7 +15,11 @@ import type {
   SessionSummary,
   SessionListItem,
   SessionHistoryMessage,
+  SettingsPatchEntry,
+  SettingsReloadResult,
+  SettingsScopeName,
   SettingsSnapshot,
+  SettingsWriteResult,
   TrustSnapshot
 } from '../shared/ipc-types'
 
@@ -34,6 +39,13 @@ type InboundMessage =
   | { type: 'session_switch'; sessionPath: string }
   | { type: 'session_messages'; requestId: string }
   | { type: 'settings_read'; requestId: string }
+  | {
+      type: 'settings_write'
+      requestId: string
+      scope: SettingsScopeName
+      entries: SettingsPatchEntry[]
+    }
+  | { type: 'settings_reload'; requestId: string }
   | { type: 'resources_read'; requestId: string }
   | { type: 'trust_read'; requestId: string }
   | { type: 'tree_get'; requestId: string }
@@ -52,6 +64,8 @@ type OutboundMessage =
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
+  | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
+  | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -142,6 +156,16 @@ async function openSession(resumePath?: string): Promise<void> {
     resumePath
   })
   session.onEvent((event) => post({ type: 'event', event }))
+}
+
+function currentSettingsSnapshot(): SettingsSnapshot | null {
+  return settingsManager
+    ? buildSettingsSnapshot(settingsManager, workspace, agentDir, { sdk: sdkVersion })
+    : null
+}
+
+function failedWrite(error: string): SettingsWriteResult {
+  return { ok: false, error, appliedLive: [], needsReload: [], settings: null, resources: null }
 }
 
 async function handle(message: InboundMessage): Promise<void> {
@@ -250,6 +274,101 @@ async function handle(message: InboundMessage): Promise<void> {
             })
           : emptyTrustSnapshot(workspace)
     })
+    return
+  }
+
+  if (message.type === 'settings_write') {
+    if (!settingsManager) {
+      post({
+        type: 'settings_write_result',
+        requestId: message.requestId,
+        result: failedWrite('设置管理器尚未就绪')
+      })
+      return
+    }
+
+    // 项目级配置会进入版本控制并影响他人，未信任时直接拒绝
+    if (message.scope === 'project' && !settingsManager.isProjectTrusted()) {
+      post({
+        type: 'settings_write_result',
+        requestId: message.requestId,
+        result: failedWrite('项目未被信任，已拒绝写入项目级配置')
+      })
+      return
+    }
+
+    const paths = settingsPaths(workspace, agentDir)
+    const outcome = applySettingsWrite({
+      scope: message.scope,
+      entries: message.entries,
+      filePath: message.scope === 'global' ? paths.globalSettings : paths.projectSettings
+    })
+
+    if (!outcome.ok) {
+      post({
+        type: 'settings_write_result',
+        requestId: message.requestId,
+        result: failedWrite(outcome.error ?? '写入失败')
+      })
+      return
+    }
+
+    // 让共享的实例重新读盘，运行中的会话才能看到新值
+    await settingsManager.reload()
+
+    const appliedLive = session ? session.applyLiveSettings(outcome.changes) : []
+    // 未能立即生效的字段都需要重载（包含规格标注可 live、但实际应用失败的）
+    const needsReload = outcome.changed.filter((key) => !appliedLive.includes(key))
+
+    post({
+      type: 'settings_write_result',
+      requestId: message.requestId,
+      result: {
+        ok: true,
+        target: outcome.target,
+        appliedLive,
+        needsReload,
+        settings: currentSettingsSnapshot(),
+        resources: session ? session.resources() : emptyResourcesSnapshot()
+      }
+    })
+    return
+  }
+
+  if (message.type === 'settings_reload') {
+    if (!session || !settingsManager) {
+      post({
+        type: 'settings_reload_result',
+        requestId: message.requestId,
+        result: { ok: false, error: 'agent 尚未就绪', settings: null, resources: null }
+      })
+      return
+    }
+
+    try {
+      await settingsManager.reload()
+      await session.reload()
+      post({
+        type: 'settings_reload_result',
+        requestId: message.requestId,
+        result: {
+          ok: true,
+          settings: currentSettingsSnapshot(),
+          resources: session.resources()
+        }
+      })
+    } catch (error) {
+      post({
+        type: 'settings_reload_result',
+        requestId: message.requestId,
+        result: {
+          ok: false,
+          error: `重载失败：${String(error)}。若持续失败，请重启 agent（在设置里切换一次 API Key 即可）。`,
+          settings: currentSettingsSnapshot(),
+          resources: null
+        }
+      })
+    }
     return
   }
 

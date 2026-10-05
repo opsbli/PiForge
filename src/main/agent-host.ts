@@ -6,6 +6,9 @@ import type {
   SessionListItem,
   SessionHistoryMessage,
   SettingsSnapshot,
+  SettingsReloadResult,
+  SettingsWriteRequest,
+  SettingsWriteResult,
   ResourcesSnapshot,
   TrustSnapshot,
   ApprovalRequest,
@@ -23,6 +26,8 @@ type AgentOutbound =
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
+  | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
+  | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -43,6 +48,8 @@ export class AgentHost {
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
   private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
+  private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
+  private reloadWaiters = new Map<string, (result: SettingsReloadResult) => void>()
   private resourcesWaiters = new Map<string, (snapshot: ResourcesSnapshot) => void>()
   private trustWaiters = new Map<string, (snapshot: TrustSnapshot) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
@@ -139,6 +146,19 @@ export class AgentHost {
   /** 读取设置只读快照（设置中心） */
   readSettings(): Promise<SettingsSnapshot | null> {
     return this.request({ type: 'settings_read' }, this.settingsWaiters)
+  }
+
+  /** 写入设置。scope 校验、值校验、备份与原子写入均在 agent 侧完成 */
+  writeSettings(request: SettingsWriteRequest): Promise<SettingsWriteResult | null> {
+    return this.request(
+      { type: 'settings_write', scope: request.scope, entries: request.entries },
+      this.writeWaiters
+    )
+  }
+
+  /** 重载 agent：重读设置 + 重载资源 + 重建工具集 */
+  reloadAgent(): Promise<SettingsReloadResult | null> {
+    return this.request({ type: 'settings_reload' }, this.reloadWaiters)
   }
 
   /** 读取已加载资源快照（扩展 / skill / 上下文文件） */
@@ -304,6 +324,22 @@ export class AgentHost {
         if (waiter) {
           this.settingsWaiters.delete(message.requestId)
           waiter(message.snapshot)
+        }
+        break
+      }
+      case 'settings_write_result': {
+        const waiter = this.writeWaiters.get(message.requestId)
+        if (waiter) {
+          this.writeWaiters.delete(message.requestId)
+          waiter(message.result)
+        }
+        break
+      }
+      case 'settings_reload_result': {
+        const waiter = this.reloadWaiters.get(message.requestId)
+        if (waiter) {
+          this.reloadWaiters.delete(message.requestId)
+          waiter(message.result)
         }
         break
       }

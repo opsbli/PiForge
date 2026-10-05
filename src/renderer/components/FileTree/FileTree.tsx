@@ -189,8 +189,9 @@ function TreeNode({
     try {
       const content = await window.piforge.readFile(node.path)
       openFile(node.path, content)
-      // 打开文件后把中栏切到编辑器
-      useLayoutStore.getState().setMainView('editor')
+      // 打开文件后把中栏切到编辑器；设置页开启时或用户关闭该行为时不抢视图
+      const layout = useLayoutStore.getState()
+      if (layout.autoOpenEditor && !layout.settingsOpen) layout.setMainView('editor')
     } catch (err) {
       window.alert(`打开失败：${String(err)}`)
     }
@@ -306,7 +307,8 @@ function NewEntryInput({
       // 新建文件后自动打开，方便直接编辑
       if (!isDirectory) {
         useWorkspaceStore.getState().openFile(node.path, '')
-        useLayoutStore.getState().setMainView('editor')
+        const layout = useLayoutStore.getState()
+        if (layout.autoOpenEditor && !layout.settingsOpen) layout.setMainView('editor')
       }
     } catch (err) {
       setError(String(err))

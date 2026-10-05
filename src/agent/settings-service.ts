@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SettingsManager } from '@earendil-works/pi-coding-agent'
+import { FIELD_SPECS } from './settings-write'
 import type {
   CacheWarmingName,
   CodemodeModeName,
@@ -54,6 +55,25 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
+}
+
+/** 按点分路径读取嵌套值 */
+function readPath(source: Record<string, unknown>, key: string): unknown {
+  let cursor: unknown = source
+  for (const part of key.split('.')) {
+    if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) return undefined
+    cursor = (cursor as Record<string, unknown>)[part]
+  }
+  return cursor
+}
+
+/** 按字段规格生成生效值：显式配置优先，否则取规格里的内置默认 */
+function buildResolvedValues(effective: Record<string, unknown>): Record<string, unknown> {
+  const values: Record<string, unknown> = {}
+  for (const spec of FIELD_SPECS) {
+    values[spec.key] = readPath(effective, spec.key) ?? spec.defaultValue ?? null
+  }
+  return values
 }
 
 /** PackageSource 可能是字符串或对象形式，统一取来源字符串 */
@@ -166,7 +186,9 @@ export function buildSettingsSnapshot(
       probePath(paths.trustFile),
       probePath(paths.authFile),
       probePath(paths.agentDir)
-    ]
+    ],
+    fields: FIELD_SPECS,
+    resolvedValues: buildResolvedValues(asRecord(settings.getSettings()))
   }
 }
 
@@ -220,6 +242,8 @@ export function emptySettingsSnapshot(cwd: string, agentDir: string): SettingsSn
     },
     projectTrusted: false,
     errors: [{ scope: 'global', message: '设置管理器尚未就绪（agent 仍在启动）' }],
-    files: []
+    files: [],
+    fields: FIELD_SPECS,
+    resolvedValues: {}
   }
 }

@@ -1,6 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc-types'
-import type { AppInfo, CredentialStatus } from '../../shared/ipc-types'
+import type { AppInfo, CredentialStatus, SettingsWriteRequest } from '../../shared/ipc-types'
 import { saveApiKey, loadApiKey, isEncryptionAvailable } from '../credentials'
 import { agentHost } from '../agent-host'
 
@@ -26,6 +26,25 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle(IPC.RESOURCES_READ, async () => {
     return agentHost.readResources()
+  })
+
+  ipcMain.handle(IPC.SETTINGS_WRITE, async (_event, request: unknown) => {
+    const { scope, entries } = (request ?? {}) as SettingsWriteRequest
+    if (scope !== 'global' && scope !== 'project') {
+      return {
+        ok: false,
+        error: '缺少合法的写入 scope',
+        appliedLive: [],
+        needsReload: [],
+        settings: null,
+        resources: null
+      }
+    }
+    return agentHost.writeSettings({ scope, entries: Array.isArray(entries) ? entries : [] })
+  })
+
+  ipcMain.handle(IPC.SETTINGS_RELOAD, async () => {
+    return agentHost.reloadAgent()
   })
 
   ipcMain.handle(IPC.APP_INFO, async (): Promise<AppInfo> => {

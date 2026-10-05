@@ -32,6 +32,13 @@ export interface SessionHandle {
   history(): SessionHistoryMessage[]
   /** 读取已加载资源快照（扩展 / skill / 上下文文件 / 诊断） */
   resources(): ResourcesSnapshot
+  /**
+   * 把已写入的设置应用到运行中的会话。
+   * 只处理确实能立即生效的字段；返回确实已应用的键，其余交给重载路径。
+   */
+  applyLiveSettings(changes: Record<string, unknown>): string[]
+  /** 重载会话：重读设置 + 重载资源 + 重建工具集 */
+  reload(): Promise<void>
   /** 读取会话树（简化结构） */
   getTree(): TreeEntry[]
   /** 当前 leaf 节点 id */
@@ -184,6 +191,64 @@ function wrapSession(
 
     resources(): ResourcesSnapshot {
       return buildResourcesSnapshot(resourceLoader, collectTools(session))
+    },
+
+    applyLiveSettings(changes: Record<string, unknown>): string[] {
+      const applied: string[] = []
+
+      // 立即生效失败不当作错误：值已写入文件，后续重载会接上
+      const attempt = (key: string, apply: () => void): void => {
+        try {
+          apply()
+          applied.push(key)
+        } catch {
+          // 交给重载路径
+        }
+      }
+
+      const thinkingLevel = changes.defaultThinkingLevel
+      if (typeof thinkingLevel === 'string') {
+        attempt('defaultThinkingLevel', () =>
+          session.setThinkingLevel(thinkingLevel as Parameters<typeof session.setThinkingLevel>[0])
+        )
+      }
+
+      const compactionEnabled = changes['compaction.enabled']
+      if (typeof compactionEnabled === 'boolean') {
+        attempt('compaction.enabled', () => session.setAutoCompactionEnabled(compactionEnabled))
+      }
+
+      const retryEnabled = changes['retry.enabled']
+      if (typeof retryEnabled === 'boolean') {
+        attempt('retry.enabled', () => session.setAutoRetryEnabled(retryEnabled))
+      }
+
+      const steeringMode = changes.steeringMode
+      if (typeof steeringMode === 'string') {
+        attempt('steeringMode', () =>
+          session.setSteeringMode(steeringMode as Parameters<typeof session.setSteeringMode>[0])
+        )
+      }
+
+      const followUpMode = changes.followUpMode
+      if (typeof followUpMode === 'string') {
+        attempt('followUpMode', () =>
+          session.setFollowUpMode(followUpMode as Parameters<typeof session.setFollowUpMode>[0])
+        )
+      }
+
+      const cacheWarming = changes.cacheWarming
+      if (typeof cacheWarming === 'string') {
+        attempt('cacheWarming', () =>
+          session.setCacheWarmingMode(cacheWarming as Parameters<typeof session.setCacheWarmingMode>[0])
+        )
+      }
+
+      return applied
+    },
+
+    async reload(): Promise<void> {
+      await session.reload()
     },
 
     getTree(): TreeEntry[] {

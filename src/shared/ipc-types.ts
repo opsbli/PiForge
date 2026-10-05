@@ -16,6 +16,8 @@ export const IPC = {
   SET_API_KEY: 'settings:set-api-key',
   CREDENTIAL_STATUS: 'settings:credential-status',
   SETTINGS_READ: 'settings:read',
+  SETTINGS_WRITE: 'settings:write',
+  SETTINGS_RELOAD: 'settings:reload',
   RESOURCES_READ: 'resources:read',
   TRUST_READ: 'trust:read',
   APP_INFO: 'app:info',
@@ -335,6 +337,66 @@ export interface ResolvedSettings {
   blockImages: boolean
 }
 
+/** 设置写入的 scope */
+export type SettingsScopeName = 'global' | 'project'
+
+/** 字段取值类型 */
+export type SettingsValueKind = 'boolean' | 'number' | 'string' | 'stringArray' | 'enum'
+
+/**
+ * 字段规格：**由 agent 侧作为唯一权威**，渲染进程据此生成控件、
+ * 禁用不支持的 scope、并判断是否需要重载。
+ * 两端各写一份字段表必然漂移，因此这里共享同一份。
+ */
+export interface SettingsFieldSpec {
+  /** 点分路径键，如 `compaction.enabled` */
+  key: string
+  kind: SettingsValueKind
+  /** 允许写入的 scope（例如 cacheWarming 只允许 global） */
+  scopes: SettingsScopeName[]
+  /** enum 的允许取值 */
+  options?: string[]
+  min?: number
+  max?: number
+  /** true 表示写入后必须重载 agent 才生效 */
+  needsReload: boolean
+  /**
+   * SDK 内置默认值；用于展示「生效值」与判断当前是否偏离默认。
+   * 平台相关的默认值（sessionDir / shellPath 等）一律省略，避免编造。
+   */
+  defaultValue?: unknown
+}
+
+export interface SettingsPatchEntry {
+  key: string
+  value: unknown
+}
+
+export interface SettingsWriteRequest {
+  scope: SettingsScopeName
+  entries: SettingsPatchEntry[]
+}
+
+export interface SettingsWriteResult {
+  ok: boolean
+  error?: string
+  /** 实际写入的文件路径 */
+  target?: string
+  /** 已写入且在运行中立即生效的字段 */
+  appliedLive: string[]
+  /** 已写入但仍需重载才生效的字段 */
+  needsReload: string[]
+  settings: SettingsSnapshot | null
+  resources: ResourcesSnapshot | null
+}
+
+export interface SettingsReloadResult {
+  ok: boolean
+  error?: string
+  settings: SettingsSnapshot | null
+  resources: ResourcesSnapshot | null
+}
+
 /** 设置只读快照 */
 export interface SettingsSnapshot {
   paths: SettingsPaths
@@ -351,6 +413,13 @@ export interface SettingsSnapshot {
   /** 读取过程中遇到的错误（文件损坏等） */
   errors: Array<{ scope: 'global' | 'project'; message: string }>
   files: FileProbe[]
+  /** 字段规格（写入能力的唯一权威） */
+  fields: SettingsFieldSpec[]
+  /**
+   * 按字段规格键组织的**生效值**（显式配置优先，否则取 spec 的 defaultValue）。
+   * 与 `effective` 的区别：后者只含显式写入的字段。
+   */
+  resolvedValues: Record<string, unknown>
 }
 
 /** 资源加载诊断 */
@@ -450,6 +519,10 @@ export interface PiForgeApi {
   getCredentialStatus(): Promise<CredentialStatus>
   /** 读取设置、资源与信任的只读快照（设置中心用） */
   readSettings(): Promise<SettingsSnapshot | null>
+  /** 写入设置（需先取得用户确认；渲染进程负责确认门） */
+  writeSettings(request: SettingsWriteRequest): Promise<SettingsWriteResult>
+  /** 重载 agent：重读配置 + 重载资源 + 重建工具集 */
+  reloadAgent(): Promise<SettingsReloadResult>
   readResources(): Promise<ResourcesSnapshot | null>
   readTrust(): Promise<TrustSnapshot | null>
   /** 应用与运行时的版本信息（关于页） */

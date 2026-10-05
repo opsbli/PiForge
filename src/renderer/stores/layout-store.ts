@@ -7,7 +7,6 @@ import { create } from 'zustand'
 
 export type MainView = 'chat' | 'editor' | 'terminal'
 export type RightTab = 'files' | 'changes'
-
 export const SIDEBAR_DEFAULT_WIDTH = 272
 export const SIDEBAR_MIN_WIDTH = 220
 export const SIDEBAR_MAX_WIDTH = 420
@@ -18,6 +17,71 @@ export const RIGHT_PANEL_MAX_WIDTH = 560
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
 
+/**
+ * 布局偏好持久化（localStorage）。
+ * 只存界面布局这类非敏感值；凭据仍走 safeStorage，不进 localStorage。
+ */
+const STORAGE_KEY = 'piforge.layout'
+
+interface PersistedLayout {
+  sidebarWidth: number
+  sidebarCollapsed: boolean
+  rightPanelWidth: number
+  rightPanelOpen: boolean
+  rightTab: RightTab
+  mainView: MainView
+  autoOpenEditor: boolean
+}
+
+function readPersistedLayout(): Partial<PersistedLayout> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const result: Partial<PersistedLayout> = {}
+
+    if (typeof parsed.sidebarWidth === 'number') {
+      result.sidebarWidth = clamp(parsed.sidebarWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
+    }
+    if (typeof parsed.rightPanelWidth === 'number') {
+      result.rightPanelWidth = clamp(
+        parsed.rightPanelWidth,
+        RIGHT_PANEL_MIN_WIDTH,
+        RIGHT_PANEL_MAX_WIDTH
+      )
+    }
+    if (typeof parsed.sidebarCollapsed === 'boolean') result.sidebarCollapsed = parsed.sidebarCollapsed
+    if (typeof parsed.rightPanelOpen === 'boolean') result.rightPanelOpen = parsed.rightPanelOpen
+    if (parsed.rightTab === 'files' || parsed.rightTab === 'changes') result.rightTab = parsed.rightTab
+    if (parsed.mainView === 'chat' || parsed.mainView === 'editor' || parsed.mainView === 'terminal') {
+      result.mainView = parsed.mainView
+    }
+    if (typeof parsed.autoOpenEditor === 'boolean') result.autoOpenEditor = parsed.autoOpenEditor
+
+    return result
+  } catch {
+    // 解析失败时回到默认布局，不阻断启动
+    return {}
+  }
+}
+
+function persistLayout(state: LayoutState): void {
+  try {
+    const payload: PersistedLayout = {
+      sidebarWidth: state.sidebarWidth,
+      sidebarCollapsed: state.sidebarCollapsed,
+      rightPanelWidth: state.rightPanelWidth,
+      rightPanelOpen: state.rightPanelOpen,
+      rightTab: state.rightTab,
+      mainView: state.mainView,
+      autoOpenEditor: state.autoOpenEditor
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // 持久化失败只影响下次启动的布局，不报错
+  }
+}
+
 interface LayoutState {
   sidebarWidth: number
   sidebarCollapsed: boolean
@@ -27,6 +91,8 @@ interface LayoutState {
   mainView: MainView
   /** 中栏是否处于设置视图（不入 MainView，因为它是覆盖模式而非对等视图） */
   settingsOpen: boolean
+  /** 在文件面板打开文件后是否自动把中栏切到编辑器 */
+  autoOpenEditor: boolean
 
   /** 拖拽左栏边缘：正 delta 变宽 */
   resizeSidebar: (deltaX: number) => void
@@ -40,6 +106,7 @@ interface LayoutState {
 
   setRightTab: (tab: RightTab) => void
   setMainView: (view: MainView) => void
+  setAutoOpenEditor: (value: boolean) => void
 
   openSettings: () => void
   closeSettings: () => void
@@ -53,6 +120,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   rightTab: 'files',
   mainView: 'chat',
   settingsOpen: false,
+  autoOpenEditor: true,
+  ...readPersistedLayout(),
 
   resizeSidebar: (deltaX) =>
     set((state) => ({
@@ -78,7 +147,11 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   setRightTab: (rightTab) => set({ rightTab }),
   setMainView: (mainView) => set({ mainView }),
+  setAutoOpenEditor: (autoOpenEditor) => set({ autoOpenEditor }),
 
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false })
 }))
+
+// 任一项变化后写回 localStorage（settingsOpen 不入持久化内容）
+useLayoutStore.subscribe((state) => persistLayout(state))

@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { Check, KeyRound, TriangleAlert } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { CredentialStatus } from '@shared/ipc-types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { useSettingsStore } from '@renderer/stores/settings-store'
-import {
-  ChipList,
-  NoticeBlock,
-  SectionShell,
-  SettingsGroup,
-  SettingsRow,
-  ValueText
-} from '../SettingsLayout'
+import { SettingsFieldRow } from '../SettingsFieldRow'
+import { ChipList, NoticeBlock, SectionShell, SettingsGroup, SettingsRow, ValueText } from '../SettingsLayout'
 
-/** 模型：API Key（写法沿用原有 safeStorage 流程）+ 模型与思考的生效值 */
+/** 模型：凭据 + 模型与思考（可写字段由字段规格驱动） */
 export function ModelSection(): JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const resolved = settings?.resolved
@@ -51,9 +45,12 @@ export function ModelSection(): JSX.Element {
   return (
     <SectionShell
       title="模型"
-      description="默认模型、思考等级与凭据。带「生效值」的项含 SDK 内置默认，不代表已在配置文件中显式设置。"
+      description="默认模型、思考等级与凭据。带「生效值」的行会同时显示未显式设置时的内置默认。"
     >
-      <SettingsGroup title="凭据" description="API Key 使用 Electron safeStorage 加密存储，不写入 auth.json 或 localStorage。">
+      <SettingsGroup
+        title="凭据"
+        description="API Key 使用 Electron safeStorage 加密存储，不写入 auth.json 或 localStorage。"
+      >
         <div className="px-3 py-2.5">
           <label htmlFor="settings-api-key" className="text-xs text-foreground">
             DeepSeek API Key
@@ -98,18 +95,42 @@ export function ModelSection(): JSX.Element {
       </SettingsGroup>
 
       <SettingsGroup title="模型与思考">
-        <SettingsRow label="默认 provider" hint="生效值">
-          <ValueText value={resolved?.defaultProvider} />
-        </SettingsRow>
-        <SettingsRow label="默认模型" hint="生效值">
-          <ValueText value={resolved?.defaultModel} />
-        </SettingsRow>
-        <SettingsRow label="默认思考等级" hint="生效值；未显式设置时为 medium">
-          <ValueText value={resolved?.defaultThinkingLevel} />
-        </SettingsRow>
+        <SettingsFieldRow fieldKey="defaultProvider" label="默认 provider" hint="如 deepseek" />
+        <SettingsFieldRow fieldKey="defaultModel" label="默认模型" hint="如 deepseek-flash" />
+        <SettingsFieldRow
+          fieldKey="defaultThinkingLevel"
+          label="默认思考等级"
+          hint="保存后立即生效"
+          enumLabels={{
+            off: '关闭',
+            minimal: '最低',
+            low: '低',
+            medium: '中',
+            high: '高',
+            xhigh: '很高',
+            max: '最高'
+          }}
+        />
+        <SettingsFieldRow
+          fieldKey="cacheWarming"
+          label="提示缓存保温"
+          hint="保温会产生实际费用，只能写在用户级配置"
+          enumLabels={{ off: '关闭', streaming: '运行中保温', idle: '空闲也保温' }}
+        />
+        <SettingsFieldRow
+          fieldKey="hideThinkingBlock"
+          label="隐藏 thinking 块"
+          hint="只影响转录展示"
+        />
+        <SettingsFieldRow
+          fieldKey="enabledModels"
+          label="可轮换模型范围"
+          hint="模型模式，与 --models 同格式"
+        />
+
         <SettingsRow
           label="按模型思考等级"
-          hint="modelThinkingLevels，键为 provider/modelId"
+          hint="modelThinkingLevels，键为 provider/modelId；本轮只读"
         >
           <ChipList
             items={Object.entries(resolved?.modelThinkingLevels ?? {}).map(
@@ -117,38 +138,10 @@ export function ModelSection(): JSX.Element {
             )}
           />
         </SettingsRow>
-        <SettingsRow label="可轮换模型范围" hint="enabledModels 模式">
-          {resolved?.enabledModels && resolved.enabledModels.length > 0 ? (
-            <ChipList items={resolved.enabledModels} />
-          ) : (
-            <ValueText value={null} />
-          )}
-        </SettingsRow>
-        <SettingsRow label="隐藏 thinking 块">
-          <ValueText value={resolved?.hideThinkingBlock} />
-        </SettingsRow>
-        <SettingsRow label="提示缓存保温" hint="cacheWarming">
-          <ValueText value={resolved?.cacheWarming} />
-        </SettingsRow>
       </SettingsGroup>
 
-      <NoticeBlock tone="warning">
-        <span className="flex items-start gap-1.5">
-          <TriangleAlert className="mt-0.5 size-3 shrink-0" />
-          <span>
-            除 API Key 外，本分类本轮只读。修改模型与思考等级将在 P2 开放，并通过
-            AgentSession 的 live setter 立即生效，不需要重载。
-          </span>
-        </span>
-      </NoticeBlock>
-
       <NoticeBlock>
-        <span className="flex items-start gap-1.5">
-          <KeyRound className="mt-0.5 size-3 shrink-0" />
-          <span>
-            自定义 endpoint 与自定义模型（agent 目录下的 models.json）尚未接入，会在后续阶段处理。
-          </span>
-        </span>
+        自定义 endpoint 与自定义模型（agent 目录下的 models.json）尚未接入，会在后续阶段处理。
       </NoticeBlock>
     </SectionShell>
   )
