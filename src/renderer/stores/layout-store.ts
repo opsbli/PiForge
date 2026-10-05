@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 
 /**
- * 界面布局状态：侧栏宽度/折叠、右栏宽度/Tab、中栏主视图。
- * 纯 UI 偏好，不做持久化（每次启动回到默认布局）。
+ * 界面布局与视图偏好：侧栏宽度/折叠、右栏宽度/Tab、中栏主视图、编辑器显示模式。
+ * 全部为纯 UI 偏好（不含任何凭据），持久化到 localStorage，见下方 STORAGE_KEY。
  */
 
 export type MainView = 'chat' | 'editor' | 'terminal'
+export type EditorMode = 'preview' | 'edit'
 export type RightTab = 'files' | 'changes'
 export const SIDEBAR_DEFAULT_WIDTH = 272
 export const SIDEBAR_MIN_WIDTH = 220
@@ -31,6 +32,7 @@ interface PersistedLayout {
   rightTab: RightTab
   mainView: MainView
   autoOpenEditor: boolean
+  editorMode: EditorMode
 }
 
 function readPersistedLayout(): Partial<PersistedLayout> {
@@ -57,6 +59,9 @@ function readPersistedLayout(): Partial<PersistedLayout> {
       result.mainView = parsed.mainView
     }
     if (typeof parsed.autoOpenEditor === 'boolean') result.autoOpenEditor = parsed.autoOpenEditor
+    if (parsed.editorMode === 'preview' || parsed.editorMode === 'edit') {
+      result.editorMode = parsed.editorMode
+    }
 
     return result
   } catch {
@@ -74,7 +79,8 @@ function persistLayout(state: LayoutState): void {
       rightPanelOpen: state.rightPanelOpen,
       rightTab: state.rightTab,
       mainView: state.mainView,
-      autoOpenEditor: state.autoOpenEditor
+      autoOpenEditor: state.autoOpenEditor,
+      editorMode: state.editorMode
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   } catch {
@@ -93,6 +99,8 @@ interface LayoutState {
   settingsOpen: boolean
   /** 在文件面板打开文件后是否自动把中栏切到编辑器 */
   autoOpenEditor: boolean
+  /** 编辑器显示模式偏好：Markdown 文件打开时用它，初始为预览；手动切换后记住 */
+  editorMode: EditorMode
 
   /** 拖拽左栏边缘：正 delta 变宽 */
   resizeSidebar: (deltaX: number) => void
@@ -107,6 +115,7 @@ interface LayoutState {
   setRightTab: (tab: RightTab) => void
   setMainView: (view: MainView) => void
   setAutoOpenEditor: (value: boolean) => void
+  setEditorMode: (value: EditorMode) => void
 
   openSettings: () => void
   closeSettings: () => void
@@ -121,6 +130,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   mainView: 'chat',
   settingsOpen: false,
   autoOpenEditor: true,
+  editorMode: 'preview',
   ...readPersistedLayout(),
 
   resizeSidebar: (deltaX) =>
@@ -148,6 +158,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setRightTab: (rightTab) => set({ rightTab }),
   setMainView: (mainView) => set({ mainView }),
   setAutoOpenEditor: (autoOpenEditor) => set({ autoOpenEditor }),
+  setEditorMode: (editorMode) => set({ editorMode }),
 
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false })

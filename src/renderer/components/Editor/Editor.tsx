@@ -4,12 +4,10 @@ import { Check, Eye, PenLine, Save } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Segmented, type SegmentedOption } from '@renderer/components/ui/segmented'
 import { MarkdownPreview } from '@renderer/components/Editor/MarkdownPreview'
+import { useLayoutStore, type EditorMode } from '@renderer/stores/layout-store'
 import { useThemeStore } from '@renderer/stores/theme-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 import { cn } from '@renderer/lib/utils'
-
-/** 编辑器显示模式：Markdown 文档默认进预览，其余文件固定为编辑 */
-type EditorMode = 'preview' | 'edit'
 
 const MODE_OPTIONS: SegmentedOption<EditorMode>[] = [
   { value: 'preview', label: '预览', icon: Eye },
@@ -25,11 +23,14 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
   const dirty = useWorkspaceStore((s) => s.dirty)
   const markSaved = useWorkspaceStore((s) => s.markSaved)
   const resolvedTheme = useThemeStore((s) => s.resolved)
+  const preferredMode = useLayoutStore((s) => s.editorMode)
+  const setEditorMode = useLayoutStore((s) => s.setEditorMode)
   const [feedback, setFeedback] = useState<string | null>(null)
-  const [mode, setMode] = useState<EditorMode>('edit')
 
+  // 模式偏好只作用于 Markdown；其他文件永远是编辑，且不会反过来改写偏好
   const markdown = isMarkdownPath(openFilePath)
-  const previewing = markdown && mode === 'preview'
+  const mode: EditorMode = markdown ? preferredMode : 'edit'
+  const previewing = mode === 'preview'
 
   /** 保存当前文件（从 store 读最新内容，避免闭包过期） */
   const save = useCallback(async (): Promise<void> => {
@@ -113,10 +114,8 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [save])
 
-  // 切换文件时更新内容与语言，并按文件类型重置显示模式（Markdown 默认预览）
+  // 切换文件时更新内容与语言（显示模式已由 store 的偏好决定）
   useEffect(() => {
-    setMode(isMarkdownPath(openFilePath) ? 'preview' : 'edit')
-
     const editor = editorRef.current
     if (!editor) return
     const state = useWorkspaceStore.getState()
@@ -150,7 +149,7 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
         {markdown && (
           <Segmented
             value={mode}
-            onValueChange={setMode}
+            onValueChange={setEditorMode}
             options={MODE_OPTIONS}
             className="shrink-0"
           />
