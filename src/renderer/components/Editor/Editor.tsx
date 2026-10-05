@@ -1,14 +1,27 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useRef, type JSX } from 'react'
 import * as monaco from 'monaco-editor'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
-/** Monaco 编辑器：查看/编辑工作区文件 */
+/** Monaco 编辑器：查看/编辑/保存工作区文件 */
 export function Editor(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
 
   const openFilePath = useWorkspaceStore((s) => s.openFilePath)
   const dirty = useWorkspaceStore((s) => s.dirty)
+  const markSaved = useWorkspaceStore((s) => s.markSaved)
+
+  /** 保存当前文件（从 store 读最新内容，避免闭包过期） */
+  const save = useCallback(async (): Promise<void> => {
+    const state = useWorkspaceStore.getState()
+    if (!state.openFilePath) return
+    try {
+      await window.piforge.writeFile(state.openFilePath, state.content)
+      markSaved()
+    } catch (err) {
+      window.alert(`保存失败：${String(err)}`)
+    }
+  }, [markSaved])
 
   // 初始化编辑器（只一次）
   useEffect(() => {
@@ -31,12 +44,29 @@ export function Editor(): JSX.Element {
       }
     })
 
+    // Ctrl/Cmd+S 保存
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      void save()
+    })
+
     return () => {
       sub.dispose()
       editor.dispose()
       editorRef.current = null
     }
-  }, [])
+  }, [save])
+
+  // 窗口级 Ctrl/Cmd+S（编辑器未聚焦时也生效）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void save()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [save])
 
   // 切换文件时更新内容与语言
   useEffect(() => {
@@ -57,8 +87,16 @@ export function Editor(): JSX.Element {
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="truncate text-xs text-muted-foreground">
           {openFilePath ?? '未打开文件'}
-          {dirty ? ' •' : ''}
+          {dirty ? ' •未保存' : ''}
         </span>
+        <button
+          className="rounded border border-border px-2 py-0.5 text-xs hover:bg-accent disabled:opacity-40"
+          disabled={!openFilePath || !dirty}
+          onClick={() => void save()}
+          title="保存（Ctrl+S）"
+        >
+          保存
+        </button>
       </div>
       <div ref={containerRef} className="min-h-0 flex-1" />
     </div>
