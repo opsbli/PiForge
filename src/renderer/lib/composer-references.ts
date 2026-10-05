@@ -40,13 +40,18 @@ export const MENTION_META: Record<MentionKind, MentionMeta> = {
 
 const TRIGGER_CHARS: MentionKind[] = ['@', '/', '#', '&']
 
+/** 标记内部允许的字符 */
+const TOKEN_CHAR = /[\w.\-\u4e00-\u9fa5]/
+/** 标记前面的字符：只要不是词字符/路径字符/标记符就算分界（含中文全角标点） */
+const TOKEN_PREFIX = `(^|[^\\w.\\-\\u4e00-\\u9fa5@#&/])`
+
 function isTriggerChar(value: string): value is MentionKind {
   return (TRIGGER_CHARS as string[]).includes(value)
 }
 
 /** 触发符允许出现的位置：行首、空白之后、左括号之后 */
 function isTriggerStart(prev: string): boolean {
-  return prev === '' || /\s|\(/.test(prev)
+  return prev === '' || !TOKEN_CHAR.test(prev)
 }
 
 /**
@@ -212,13 +217,25 @@ export interface ParsedReferences {
   sessions: SessionListItem[]
 }
 
+/**
+ * 从捕获到的原始片段里取有效标记。
+ *
+ * 中文正文没有空格分词，标记后面常常紧跟全角标点（如 `@a/b.md，`），
+ * 若不裁剪就会把标点吞进标记导致解析失败。
+ */
+function cleanToken(kind: MentionKind, raw: string): string {
+  const pattern =
+    kind === '@' ? /^[\w./\\\-\u4e00-\u9fa5]+/ : /^[\w.\-\u4e00-\u9fa5]+/
+  return raw.match(pattern)?.[0] ?? ''
+}
+
 function collect(text: string, kind: MentionKind): string[] {
   const trigger = kind === '@' ? '@' : kind === '/' ? '\\/' : kind === '#' ? '#' : '&'
-  const pattern = new RegExp(`(^|[\\s(])${trigger}([^\\s@#&/]+)`, 'g')
+  const pattern = new RegExp(`${TOKEN_PREFIX}${trigger}([^\\s@#&/]+)`, 'g')
   const found: string[] = []
   let match: RegExpExecArray | null
   while ((match = pattern.exec(text)) !== null) {
-    const value = match[2]
+    const value = cleanToken(kind, match[2] ?? '')
     if (value && !found.includes(value)) found.push(value)
     // 允许 `@` 出现在路径里：整体匹配失败时把游标推进一格，避免死循环
     if (match.index === pattern.lastIndex) pattern.lastIndex += 1
@@ -228,14 +245,12 @@ function collect(text: string, kind: MentionKind): string[] {
 
 /** 收集引用文件路径（`@` 允许包含 `/`，单独处理） */
 function collectFilePaths(text: string): string[] {
-  const pattern = /(^|[\s(])@([^\s@#&]+)/g
+  const pattern = new RegExp(`${TOKEN_PREFIX}@([^\\s@#&]+)`, 'g')
   const found: string[] = []
   let match: RegExpExecArray | null
   while ((match = pattern.exec(text)) !== null) {
-    const value = match[2]
-    if (value && /^[\w./\\-]+$/.test(value) && /[./]/.test(value) && !found.includes(value)) {
-      found.push(value)
-    }
+    const value = cleanToken('@', match[2] ?? '')
+    if (value && /[./]/.test(value) && !found.includes(value)) found.push(value)
     if (match.index === pattern.lastIndex) pattern.lastIndex += 1
   }
   return found
