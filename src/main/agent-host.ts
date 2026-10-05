@@ -18,6 +18,8 @@ import type {
   McpUpsertRequest,
   ResourcesSnapshot,
   TrustSnapshot,
+  TrustWriteRequest,
+  TrustWriteResult,
   ApprovalRequest,
   TreeEntry
 } from '../shared/ipc-types'
@@ -41,6 +43,7 @@ type AgentOutbound =
   | { type: 'mcp_open_url'; url: string }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
+  | { type: 'trust_write_result'; requestId: string; result: TrustWriteResult }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -65,6 +68,7 @@ export class AgentHost {
   private mcpWaiters = new Map<string, (result: McpConfigResult) => void>()
   private resourcesWaiters = new Map<string, (snapshot: ResourcesSnapshot) => void>()
   private trustWaiters = new Map<string, (snapshot: TrustSnapshot) => void>()
+  private trustWriteWaiters = new Map<string, (result: TrustWriteResult) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
@@ -223,6 +227,14 @@ export class AgentHost {
   /** 读取项目信任快照 */
   readTrust(): Promise<TrustSnapshot | null> {
     return this.request({ type: 'trust_read' }, this.trustWaiters)
+  }
+
+  /** 写入 / 清除项目信任决定 */
+  writeTrust(request: TrustWriteRequest): Promise<TrustWriteResult | null> {
+    return this.request(
+      { type: 'trust_set', decision: request.decision },
+      this.trustWriteWaiters
+    )
   }
 
   /** 读取当前会话活动分支的历史消息（切换/恢复会话后回显） */
@@ -410,6 +422,14 @@ export class AgentHost {
         if (waiter) {
           this.trustWaiters.delete(message.requestId)
           waiter(message.snapshot)
+        }
+        break
+      }
+      case 'trust_write_result': {
+        const waiter = this.trustWriteWaiters.get(message.requestId)
+        if (waiter) {
+          this.trustWriteWaiters.delete(message.requestId)
+          waiter(message.result)
         }
         break
       }

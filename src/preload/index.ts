@@ -6,7 +6,8 @@ import type {
   TerminalDataEvent,
   TerminalExitEvent,
   MemoryEntry,
-  PackageProgress
+  PackageProgress,
+  UpdaterStatus
 } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 
@@ -86,6 +87,16 @@ const api: PiForgeApi = {
   patchMcpServer: (request) => ipcRenderer.invoke(IPC.MCP_PATCH, request),
   readResources: () => ipcRenderer.invoke(IPC.RESOURCES_READ),
   readTrust: () => ipcRenderer.invoke(IPC.TRUST_READ),
+
+  writeTrust: (request) => ipcRenderer.invoke(IPC.TRUST_SET, request),
+
+  onUpdaterStatus: (cb: (status: UpdaterStatus) => void): (() => void) => {
+    const listener = (_event: unknown, payload: UpdaterStatus): void => cb(payload)
+    ipcRenderer.on(IPC.UPDATER_STATUS, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.UPDATER_STATUS, listener)
+    }
+  },
   getAppInfo: () => ipcRenderer.invoke(IPC.APP_INFO),
 
   // ---- 工作区 ----

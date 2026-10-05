@@ -29,6 +29,8 @@ export const IPC = {
   MCP_PATCH: 'mcp:patch',
   RESOURCES_READ: 'resources:read',
   TRUST_READ: 'trust:read',
+  TRUST_SET: 'trust:set',
+  UPDATER_STATUS: 'updater:status',
   APP_INFO: 'app:info',
 
   // 工作区
@@ -622,6 +624,34 @@ export interface TrustSnapshot {
   defaultProjectTrust: ProjectTrustDefault
 }
 
+/** decision 为 null 表示清除已保存的决定 */
+export interface TrustWriteRequest {
+  decision: boolean | null
+}
+
+export interface TrustWriteResult {
+  ok: boolean
+  error?: string
+  trust: TrustSnapshot | null
+  /** 生效时机说明（清除决定与写入决定的语义不同） */
+  note?: string
+}
+
+/** 自动更新状态（由主进程广播） */
+export interface UpdaterStatus {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error'
+  version?: string
+  percent?: number
+  message?: string
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -665,6 +695,10 @@ export interface PiForgeApi {
   patchMcpServer(request: McpPatchRequest): Promise<McpConfigResult>
   readResources(): Promise<ResourcesSnapshot | null>
   readTrust(): Promise<TrustSnapshot | null>
+  /** 写入 / 清除项目信任决定（需先取得用户确认） */
+  writeTrust(request: TrustWriteRequest): Promise<TrustWriteResult | null>
+  /** 订阅自动更新状态 */
+  onUpdaterStatus(cb: (status: UpdaterStatus) => void): () => void
   /** 应用与运行时的版本信息（关于页） */
   getAppInfo(): Promise<AppInfo>
 
@@ -725,7 +759,7 @@ export interface PiForgeApi {
   getMemoryIndex(): Promise<string>
 
   // 自动更新
-  checkForUpdates(): Promise<unknown>
+  checkForUpdates(): Promise<UpdaterStatus>
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
 }

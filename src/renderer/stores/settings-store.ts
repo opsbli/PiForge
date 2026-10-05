@@ -36,6 +36,8 @@ interface SettingsState {
 
   load: () => Promise<void>
   setScope: (scope: SettingsScopeName) => void
+  /** 信任决定写入后更新快照 */
+  setTrust: (trust: TrustSnapshot | null) => void
   setDraftValue: (key: string, value: unknown) => void
   resetDraft: () => void
   requestSave: () => void
@@ -80,6 +82,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setScope: (scope) => set({ scope }),
+
+  setTrust: (trust) => set({ trust }),
 
   setDraftValue: (key, value) =>
     set((state) => {

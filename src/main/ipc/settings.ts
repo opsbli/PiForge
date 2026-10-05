@@ -7,7 +7,8 @@ import type {
   McpScopeNameRequest,
   McpUpsertRequest,
   PackageActionRequest,
-  SettingsWriteRequest
+  SettingsWriteRequest,
+  TrustWriteRequest
 } from '../../shared/ipc-types'
 import { saveApiKey, loadApiKey, isEncryptionAvailable } from '../credentials'
 import { agentHost } from '../agent-host'
@@ -78,6 +79,14 @@ export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.PACKAGES_UPDATE, async (_event, request: unknown) => {
     const { source } = (request ?? {}) as { source?: string }
     return agentHost.updatePackages(typeof source === 'string' ? { source } : {})
+  })
+
+  ipcMain.handle(IPC.TRUST_SET, async (_event, request: unknown) => {
+    const { decision } = (request ?? {}) as TrustWriteRequest
+    if (decision !== null && typeof decision !== 'boolean') {
+      return { ok: false, error: 'decision 必须是 true / false / null', trust: null }
+    }
+    return agentHost.writeTrust({ decision: decision === null ? null : decision })
   })
 
   ipcMain.handle(IPC.MCP_LIST, async () => {

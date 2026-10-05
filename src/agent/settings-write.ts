@@ -67,7 +67,17 @@ export const FIELD_SPECS: SettingsFieldSpec[] = [
   // 已实测：**相对路径的排除语法会静默失效**，只有 glob（`!**/x/**`）与绝对路径生效，
   // 因此停用 skill 由界面生成 `!**/<目录名>/**`。
   { key: 'extensions', kind: 'stringArray', scopes: BOTH, needsReload: true },
-  { key: 'skills', kind: 'stringArray', scopes: BOTH, needsReload: true }
+  { key: 'skills', kind: 'stringArray', scopes: BOTH, needsReload: true },
+
+  // 文档标注为只能写在 agent 目录的用户级配置；启动时读取
+  {
+    key: 'defaultProjectTrust',
+    kind: 'enum',
+    options: ['ask', 'always', 'never'],
+    scopes: GLOBAL_ONLY,
+    needsReload: true,
+    defaultValue: 'ask'
+  }
 ]
 
 const SPEC_BY_KEY = new Map(FIELD_SPECS.map((spec) => [spec.key, spec]))

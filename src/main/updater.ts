@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import electronUpdater from 'electron-updater'
+import { IPC } from '../shared/ipc-types'
 
 const { autoUpdater } = electronUpdater
 
@@ -8,10 +9,12 @@ const { autoUpdater } = electronUpdater
  *
  * 只在打包后运行（dev 模式跳过，避免误触发）。
  * 流程：检查更新 → 通知渲染进程 → 用户确认 → 下载 → 提示重启安装。
+ *
+ * 通道名统一取自 shared 的 IPC 常量，避免与 preload 的字面量漂移。
  */
 
 export const UPDATER_CHANNELS = {
-  STATUS: 'updater:status',
+  STATUS: IPC.UPDATER_STATUS,
   CHECK: 'updater:check',
   DOWNLOAD: 'updater:download',
   INSTALL: 'updater:install'

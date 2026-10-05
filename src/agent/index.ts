@@ -35,7 +35,8 @@ import type {
   SettingsScopeName,
   SettingsSnapshot,
   SettingsWriteResult,
-  TrustSnapshot
+  TrustSnapshot,
+  TrustWriteResult
 } from '../shared/ipc-types'
 
 /**
@@ -71,6 +72,7 @@ type InboundMessage =
   | { type: 'mcp_patch'; requestId: string; request: McpPatchRequest }
   | { type: 'resources_read'; requestId: string }
   | { type: 'trust_read'; requestId: string }
+  | { type: 'trust_set'; requestId: string; decision: boolean | null }
   | { type: 'tree_get'; requestId: string }
   | {
       type: 'tree_navigate'
@@ -95,6 +97,7 @@ type OutboundMessage =
   | { type: 'mcp_open_url'; url: string }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
+  | { type: 'trust_write_result'; requestId: string; result: TrustWriteResult }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -192,6 +195,19 @@ async function openSession(resumePath?: string): Promise<void> {
     openUrl: (url) => post({ type: 'mcp_open_url', url })
   })
   session.onEvent((event) => post({ type: 'event', event }))
+}
+
+/** 当前的信任快照；settingsManager / trustStore 未就绪时返回空快照 */
+function currentTrustSnapshot(): TrustSnapshot {
+  if (!settingsManager || !trustStore) return emptyTrustSnapshot(workspace)
+  return buildTrustSnapshot({
+    cwd: workspace,
+    sdkRequiresTrust: sdkRequiresTrust ? sdkRequiresTrust(workspace) : false,
+    decision: trustStore.get(workspace),
+    savedPath: settingsPaths(workspace, agentDir).trustFile,
+    loaderTrusted: settingsManager.isProjectTrusted(),
+    defaultProjectTrust: settingsManager.getDefaultProjectTrust()
+  })
 }
 
 function currentSettingsSnapshot(): SettingsSnapshot | null {
@@ -328,17 +344,7 @@ async function handle(message: InboundMessage): Promise<void> {
     post({
       type: 'trust_snapshot',
       requestId: message.requestId,
-      snapshot:
-        settingsManager && trustStore
-          ? buildTrustSnapshot({
-              cwd: workspace,
-              sdkRequiresTrust: sdkRequiresTrust ? sdkRequiresTrust(workspace) : false,
-              decision: trustStore.get(workspace),
-              savedPath: settingsPaths(workspace, agentDir).trustFile,
-              loaderTrusted: settingsManager.isProjectTrusted(),
-              defaultProjectTrust: settingsManager.getDefaultProjectTrust()
-            })
-          : emptyTrustSnapshot(workspace)
+      snapshot: currentTrustSnapshot()
     })
     return
   }
@@ -539,6 +545,51 @@ async function handle(message: InboundMessage): Promise<void> {
       requestId: message.requestId,
       result: patchMcpServer(message.request, mcpContext())
     })
+    return
+  }
+
+  if (message.type === 'trust_set') {
+    if (!trustStore || !settingsManager) {
+      post({
+        type: 'trust_write_result',
+        requestId: message.requestId,
+        result: { ok: false, error: 'agent 尚未就绪', trust: null }
+      })
+      return
+    }
+
+    try {
+      // 1) 落盘信任决定（null 表示清除）
+      trustStore.set(workspace, message.decision === null ? null : message.decision === true)
+      // 2) 让运行中的会话按新决定生效：resourceLoader 的 resolveProjectTrust 只受询一次，
+      //    因此必须显式改 SettingsManager 的信任标志并重载，否则改了也不生效。
+      settingsManager.setProjectTrusted(message.decision === true)
+      await settingsManager.reload()
+      await session?.reload()
+
+      const note =
+        message.decision === null
+          ? '已清除保存的决定。当前会话按「未信任」重载，下次启动将按 defaultProjectTrust 决定。'
+          : message.decision
+            ? '已信任该项目。项目级配置与资源已在本会话加载。'
+            : '已拒绝该项目。项目级配置与资源已在本会话停用。'
+
+      post({
+        type: 'trust_write_result',
+        requestId: message.requestId,
+        result: { ok: true, trust: currentTrustSnapshot(), note }
+      })
+    } catch (error) {
+      post({
+        type: 'trust_write_result',
+        requestId: message.requestId,
+        result: {
+          ok: false,
+          error: `写入信任决定失败：${String(error)}`,
+          trust: currentTrustSnapshot()
+        }
+      })
+    }
     return
   }
 
