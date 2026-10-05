@@ -27,6 +27,14 @@ export const IPC = {
   FS_CREATE: 'fs:create',
   FS_DELETE: 'fs:delete',
 
+  // 记忆管理
+  MEMORY_LIST: 'memory:list',
+  MEMORY_READ: 'memory:read',
+  MEMORY_WRITE: 'memory:write',
+  MEMORY_DELETE: 'memory:delete',
+  MEMORY_INDEX: 'memory:index',
+  MEMORY_REBUILD: 'memory:rebuild',
+
   // 会话管理
   SESSION_LIST: 'session:list',
   SESSION_NEW: 'session:new',
@@ -109,6 +117,16 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+/** 记忆条目 */
+export interface MemoryEntry {
+  name: string
+  description: string
+  type: 'decision' | 'preference' | 'fact' | 'debug_history'
+  created: string
+  modified: string
+  body: string
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -146,6 +164,18 @@ export interface PiForgeApi {
   killTerminal(terminalId: string): Promise<void>
   onTerminalData(cb: (event: TerminalDataEvent) => void): () => void
   onTerminalExit(cb: (event: TerminalExitEvent) => void): () => void
+
+  // 记忆管理
+  listMemories(): Promise<MemoryEntry[]>
+  readMemory(name: string): Promise<MemoryEntry | null>
+  writeMemory(entry: {
+    name: string
+    description: string
+    type: string
+    body: string
+  }): Promise<MemoryEntry>
+  deleteMemory(name: string): Promise<void>
+  getMemoryIndex(): Promise<string>
 
   // 自动更新
   checkForUpdates(): Promise<unknown>

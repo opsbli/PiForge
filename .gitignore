@@ -20,3 +20,6 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Pi 项目本地配置与记忆（用户数据）
+.pi/

@@ -4,7 +4,8 @@ import type {
   PiForgeApi,
   ApprovalRequest,
   TerminalDataEvent,
-  TerminalExitEvent
+  TerminalExitEvent,
+  MemoryEntry
 } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 
@@ -85,6 +86,13 @@ const api: PiForgeApi = {
       ipcRenderer.removeListener(IPC.TERMINAL_EXIT, listener)
     }
   },
+
+  // ---- 记忆管理 ----
+  listMemories: () => ipcRenderer.invoke(IPC.MEMORY_LIST),
+  readMemory: (name: string) => ipcRenderer.invoke(IPC.MEMORY_READ, name),
+  writeMemory: (entry: { name: string; description: string; type: string; body: string }) => ipcRenderer.invoke(IPC.MEMORY_WRITE, entry),
+  deleteMemory: (name: string) => ipcRenderer.invoke(IPC.MEMORY_DELETE, name),
+  getMemoryIndex: () => ipcRenderer.invoke(IPC.MEMORY_INDEX),
 
   // ---- 自动更新 ----
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),

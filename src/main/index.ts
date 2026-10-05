@@ -5,6 +5,7 @@ import {
   registerSettingsIpc,
   registerFsIpc,
   registerTerminalIpc,
+  registerMemoryIpc,
   disposeTerminals
 } from './ipc'
 import { agentHost } from './agent-host'
@@ -41,6 +42,7 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerFsIpc()
   registerTerminalIpc()
+  registerMemoryIpc()
   setupAutoUpdater()
   // 启动时默认把当前目录作为工作区（用户可随时用「打开文件夹」切换）
   setWorkspace(process.env.PIFORGE_WORKSPACE ?? process.cwd())

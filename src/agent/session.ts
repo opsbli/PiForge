@@ -2,6 +2,7 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type { SessionSummary } from '../shared/ipc-types'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
+import { createMemoryExtension } from './memory'
 import { builtinTools } from './tools'
 
 export interface SessionHandle {
@@ -64,7 +65,8 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     agentDir,
     settingsManager,
     extensionFactories: [
-      { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) }
+      { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) },
+      { name: 'piforge-memory', factory: createMemoryExtension(cwd) }
     ]
   })
   await resourceLoader.reload()

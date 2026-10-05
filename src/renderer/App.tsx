@@ -6,6 +6,7 @@ import { ChatPanel } from '@renderer/components/Chat/ChatPanel'
 import { ApprovalDialog } from '@renderer/components/Approval/ApprovalDialog'
 import { SettingsDialog } from '@renderer/components/Settings/SettingsDialog'
 import { SessionList } from '@renderer/components/SessionTree/SessionList'
+import { MemoryPanel } from '@renderer/components/Memory/MemoryPanel'
 import { CostDashboard } from '@renderer/components/Cost/CostDashboard'
 import { useApprovalStore } from '@renderer/stores/approval-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
@@ -16,6 +17,7 @@ export default function App(): JSX.Element {
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [memoryOpen, setMemoryOpen] = useState(false)
 
   // 订阅危险操作审批请求
   useEffect(() => {
@@ -55,6 +57,12 @@ export default function App(): JSX.Element {
           <CostDashboard />
           <button
             className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+            onClick={() => setMemoryOpen(true)}
+          >
+            记忆
+          </button>
+          <button
+            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
             onClick={() => setSessionsOpen(true)}
           >
             会话
@@ -90,6 +98,7 @@ export default function App(): JSX.Element {
       <ApprovalDialog />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SessionList open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
+      <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
     </div>
   )
 }
