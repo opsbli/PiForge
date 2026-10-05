@@ -8,7 +8,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // Agent Utility Process 入口（与主进程一起构建到 out/main/）
+          agent: resolve(__dirname, 'src/agent/index.ts')
+        }
       }
     }
   },
