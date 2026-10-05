@@ -27,6 +27,11 @@ export const IPC = {
   FS_CREATE: 'fs:create',
   FS_DELETE: 'fs:delete',
 
+  // 会话管理
+  SESSION_LIST: 'session:list',
+  SESSION_NEW: 'session:new',
+  SESSION_SWITCH: 'session:switch',
+
   // 终端
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_INPUT: 'terminal:input',
@@ -38,13 +43,30 @@ export const IPC = {
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
 
-/** 会话摘要 */
+/** 会话摘要（CostDashboard / 状态栏使用） */
 export interface SessionSummary {
   sessionId: string
   model: string
   messageCount: number
-  tokenUsage: { input: number; output: number }
+  tokenUsage: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+  /** 估算费用（美元，由 SDK SessionStats 提供） */
   cost: number
+}
+
+/** 历史会话项（会话列表用） */
+export interface SessionListItem {
+  id: string
+  path: string
+  name?: string
+  messageCount: number
+  modified: string
+  firstMessage: string
 }
 
 /** 危险操作审批请求 */
@@ -94,6 +116,9 @@ export interface PiForgeApi {
   approveToolCall(callId: string): Promise<void>
   getSessionSummary(): Promise<SessionSummary>
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
+  listSessions(): Promise<SessionListItem[]>
+  newSession(): Promise<void>
+  switchSession(sessionPath: string): Promise<void>
 
   // 审批
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void

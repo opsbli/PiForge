@@ -8,8 +8,10 @@ export interface SessionHandle {
   send(text: string): Promise<void>
   /** 订阅映射后的前端事件 */
   onEvent(listener: (event: AgentEvent) => void): () => void
-  /** 读取会话摘要 */
+  /** 读取会话摘要（含 token / cost） */
   summary(): SessionSummary
+  /** 会话文件路径（持久化模式） */
+  sessionFile(): string | undefined
   /** 清理资源 */
   dispose(): void
 }
@@ -18,16 +20,24 @@ export interface SessionHandle {
 const DEFAULT_PROVIDER = 'deepseek'
 const DEFAULT_MODEL = process.env.PI_MODEL_ID ?? 'deepseek-flash'
 
+export interface CreateSessionOptions {
+  cwd: string
+  bridge: ApprovalBridge
+  /** 已有会话文件路径：传入则恢复该会话；不传则新建 */
+  resumePath?: string
+}
+
 /**
- * 创建一个 pi-agent 会话。
+ * 创建/恢复一个 pi-agent 会话。
  *
  * 注意：`@earendil-works/pi-coding-agent` 是纯 ESM，而 Agent Utility Process
  * 被 electron-vite 构建为 CJS，所以这里用动态 `import()` 加载。
  *
- * 会话模式：默认**持久化**（SessionManager.create(cwd)），便于会话恢复。
+ * 会话模式：默认**持久化**（SessionManager.create / open），便于会话恢复。
  * 需要临时会话时应传入 SessionManager.inMemory()。
  */
-export async function createSession(cwd: string, bridge: ApprovalBridge): Promise<SessionHandle> {
+export async function createSession(options: CreateSessionOptions): Promise<SessionHandle> {
+  const { cwd, bridge, resumePath } = options
   const sdk = await import('@earendil-works/pi-coding-agent')
 
   // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
@@ -58,6 +68,11 @@ export async function createSession(cwd: string, bridge: ApprovalBridge): Promis
   })
   await resourceLoader.reload()
 
+  // 持久化：恢复已有会话或新建
+  const sessionManager = resumePath
+    ? sdk.SessionManager.open(resumePath)
+    : sdk.SessionManager.create(cwd)
+
   const { session } = await sdk.createAgentSession({
     cwd,
     agentDir,
@@ -65,17 +80,29 @@ export async function createSession(cwd: string, bridge: ApprovalBridge): Promis
     model,
     settingsManager,
     resourceLoader,
-    // 默认持久化（非 inMemory）
-    sessionManager: sdk.SessionManager.create(cwd)
+    sessionManager
   })
 
-  return wrapSession(session)
+  return wrapSession(session, `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
 }
 
-function wrapSession(session: AgentSession): SessionHandle {
-  let inputTokens = 0
-  let outputTokens = 0
+/** 列出历史会话 */
+export async function listSessions(cwd: string): Promise<
+  Array<{ id: string; path: string; name?: string; messageCount: number; modified: string; firstMessage: string }>
+> {
+  const sdk = await import('@earendil-works/pi-coding-agent')
+  const infos = await sdk.SessionManager.list(cwd)
+  return infos.map((info) => ({
+    id: info.id,
+    path: info.path,
+    name: info.name,
+    messageCount: info.messageCount,
+    modified: info.modified.toISOString(),
+    firstMessage: info.firstMessage
+  }))
+}
 
+function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
   return {
     async send(text: string): Promise<void> {
       await session.prompt(text)
@@ -83,13 +110,6 @@ function wrapSession(session: AgentSession): SessionHandle {
 
     onEvent(listener: (event: AgentEvent) => void): () => void {
       const unsubscribe = session.subscribe((event) => {
-        // 累计 token（若事件里带 usage）
-        const e = event as Record<string, any>
-        const usage = e.message?.usage
-        if (usage) {
-          inputTokens = Math.max(inputTokens, usage.input ?? usage.promptTokens ?? 0)
-          outputTokens = Math.max(outputTokens, usage.output ?? usage.completionTokens ?? 0)
-        }
         const mapped = mapEvent(event)
         if (mapped) listener(mapped)
       })
@@ -97,13 +117,24 @@ function wrapSession(session: AgentSession): SessionHandle {
     },
 
     summary(): SessionSummary {
+      const stats = session.getSessionStats()
       return {
-        sessionId: (session as unknown as { id?: string }).id ?? 'current',
-        model: `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`,
-        messageCount: session.messages.length,
-        tokenUsage: { input: inputTokens, output: outputTokens },
-        cost: 0
+        sessionId: stats.sessionId,
+        model: modelLabel,
+        messageCount: stats.totalMessages,
+        tokenUsage: {
+          input: stats.tokens.input,
+          output: stats.tokens.output,
+          cacheRead: stats.tokens.cacheRead,
+          cacheWrite: stats.tokens.cacheWrite,
+          total: stats.tokens.total
+        },
+        cost: stats.cost
       }
+    },
+
+    sessionFile(): string | undefined {
+      return session.getSessionStats().sessionFile
     },
 
     dispose(): void {

@@ -1,7 +1,7 @@
-import { createSession, type SessionHandle } from './session'
+import { createSession, listSessions, type SessionHandle } from './session'
 import type { ApprovalRequest } from './approval'
 import type { AgentEvent } from '../shared/agent-events'
-import type { SessionSummary } from '../shared/ipc-types'
+import type { SessionSummary, SessionListItem } from '../shared/ipc-types'
 
 /**
  * Agent Utility Process 入口。
@@ -14,6 +14,9 @@ type InboundMessage =
   | { type: 'prompt'; text: string }
   | { type: 'summary'; requestId: string }
   | { type: 'approval_response'; requestId: string; approved: boolean }
+  | { type: 'session_list'; requestId: string }
+  | { type: 'session_new' }
+  | { type: 'session_switch'; sessionPath: string }
   | { type: 'dispose' }
 
 type OutboundMessage =
@@ -21,9 +24,11 @@ type OutboundMessage =
   | { type: 'event'; event: AgentEvent }
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
+  | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'error'; message: string }
 
 const port = process.parentPort
+const workspace = process.env.PIFORGE_WORKSPACE ?? process.cwd()
 
 let session: SessionHandle | null = null
 const pendingApprovals = new Map<string, (approved: boolean) => void>()
@@ -47,6 +52,13 @@ const approvalBridge = {
 port.on('message', (event) => {
   void handle(event.data as InboundMessage)
 })
+
+/** 建立会话并挂上事件流 */
+async function openSession(resumePath?: string): Promise<void> {
+  session?.dispose()
+  session = await createSession({ cwd: workspace, bridge: approvalBridge, resumePath })
+  session.onEvent((event) => post({ type: 'event', event }))
+}
 
 async function handle(message: InboundMessage): Promise<void> {
   if (message.type === 'prompt') {
@@ -80,6 +92,34 @@ async function handle(message: InboundMessage): Promise<void> {
     return
   }
 
+  if (message.type === 'session_list') {
+    try {
+      const sessions = await listSessions(workspace)
+      post({ type: 'session_list_result', requestId: message.requestId, sessions })
+    } catch (err) {
+      post({ type: 'error', message: `列出会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_new') {
+    try {
+      await openSession()
+    } catch (err) {
+      post({ type: 'error', message: `新建会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_switch') {
+    try {
+      await openSession(message.sessionPath)
+    } catch (err) {
+      post({ type: 'error', message: `切换会话失败：${String(err)}` })
+    }
+    return
+  }
+
   if (message.type === 'dispose') {
     session?.dispose()
     session = null
@@ -87,9 +127,7 @@ async function handle(message: InboundMessage): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const cwd = process.env.PIFORGE_WORKSPACE ?? process.cwd()
-  session = await createSession(cwd, approvalBridge)
-  session.onEvent((event) => post({ type: 'event', event }))
+  await openSession()
   post({ type: 'ready' })
 }
 

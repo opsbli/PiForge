@@ -39,4 +39,18 @@ export function registerAgentIpc(): void {
   ipcMain.handle(IPC.SESSION_SUMMARY, async (): Promise<SessionSummary> => {
     return agentHost.getSummary()
   })
+
+  ipcMain.handle(IPC.SESSION_LIST, async () => {
+    return agentHost.listSessions()
+  })
+
+  ipcMain.handle(IPC.SESSION_NEW, async (): Promise<void> => {
+    agentHost.newSession()
+  })
+
+  ipcMain.handle(IPC.SESSION_SWITCH, async (_event, sessionPath: unknown): Promise<void> => {
+    if (typeof sessionPath === 'string' && sessionPath) {
+      agentHost.switchSession(sessionPath)
+    }
+  })
 }

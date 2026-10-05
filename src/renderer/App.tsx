@@ -5,6 +5,8 @@ import { TerminalPanel } from '@renderer/components/Terminal/TerminalPanel'
 import { ChatPanel } from '@renderer/components/Chat/ChatPanel'
 import { ApprovalDialog } from '@renderer/components/Approval/ApprovalDialog'
 import { SettingsDialog } from '@renderer/components/Settings/SettingsDialog'
+import { SessionList } from '@renderer/components/SessionTree/SessionList'
+import { CostDashboard } from '@renderer/components/Cost/CostDashboard'
 import { useApprovalStore } from '@renderer/stores/approval-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
@@ -13,6 +15,7 @@ export default function App(): JSX.Element {
   const workspace = useWorkspaceStore((s) => s.workspace)
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
 
   // 订阅危险操作审批请求
   useEffect(() => {
@@ -41,12 +44,21 @@ export default function App(): JSX.Element {
           >
             打开文件夹
           </button>
-          <span className="max-w-[420px] truncate text-xs text-muted-foreground" title={workspace ?? ''}>
+          <span
+            className="max-w-[300px] truncate text-xs text-muted-foreground"
+            title={workspace ?? ''}
+          >
             {workspace ?? '未选择工作区'}
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">deepseek-flash</span>
+          <CostDashboard />
+          <button
+            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+            onClick={() => setSessionsOpen(true)}
+          >
+            会话
+          </button>
           <button
             className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
             onClick={() => setSettingsOpen(true)}
@@ -77,6 +89,7 @@ export default function App(): JSX.Element {
 
       <ApprovalDialog />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SessionList open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
     </div>
   )
 }

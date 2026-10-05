@@ -21,6 +21,11 @@ const api: PiForgeApi = {
 
   getSessionSummary: () => ipcRenderer.invoke(IPC.SESSION_SUMMARY),
 
+  listSessions: () => ipcRenderer.invoke(IPC.SESSION_LIST),
+  newSession: (): Promise<void> => ipcRenderer.invoke(IPC.SESSION_NEW),
+  switchSession: (sessionPath: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_SWITCH, sessionPath),
+
   onAgentEvent: (cb: (event: AgentEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: AgentEvent): void => cb(payload)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)

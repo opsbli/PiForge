@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
-import type { SessionSummary, ApprovalRequest } from '../shared/ipc-types'
+import type { SessionSummary, SessionListItem, ApprovalRequest } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 import { resolveApiKey } from './credentials'
 
@@ -10,6 +10,7 @@ type AgentOutbound =
   | { type: 'event'; event: AgentEvent }
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
+  | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'error'; message: string }
 
 /**
@@ -23,6 +24,7 @@ export class AgentHost {
   private pendingPrompts: string[] = []
   private requestSeq = 0
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
+  private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
 
@@ -64,7 +66,7 @@ export class AgentHost {
           sessionId: 'disconnected',
           model: 'unknown',
           messageCount: 0,
-          tokenUsage: { input: 0, output: 0 },
+          tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           cost: 0
         })
         return
@@ -73,6 +75,29 @@ export class AgentHost {
       this.summaryWaiters.set(requestId, resolve)
       this.child.postMessage({ type: 'summary', requestId })
     })
+  }
+
+  /** 列出历史会话 */
+  listSessions(): Promise<SessionListItem[]> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve([])
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      this.sessionListWaiters.set(requestId, resolve)
+      this.child.postMessage({ type: 'session_list', requestId })
+    })
+  }
+
+  /** 新建会话 */
+  newSession(): void {
+    this.child?.postMessage({ type: 'session_new' })
+  }
+
+  /** 切换到指定会话 */
+  switchSession(sessionPath: string): void {
+    this.child?.postMessage({ type: 'session_switch', sessionPath })
   }
 
   /** 回传审批结果（renderer → 主进程 → agent） */
@@ -121,6 +146,14 @@ export class AgentHost {
         this.approvalByCallId.set(message.request.callId, message.requestId)
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send(IPC.APPROVAL_REQUEST, message.request)
+        }
+        break
+      }
+      case 'session_list_result': {
+        const waiter = this.sessionListWaiters.get(message.requestId)
+        if (waiter) {
+          this.sessionListWaiters.delete(message.requestId)
+          waiter(message.sessions)
         }
         break
       }
