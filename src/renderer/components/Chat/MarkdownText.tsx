@@ -1,218 +1,123 @@
-import type { JSX, ReactNode } from 'react'
+import type { JSX } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { cn } from '@renderer/lib/utils'
 
 /**
- * 轻量 Markdown 渲染（零依赖）。
+ * 对话区 Markdown 渲染（react-markdown + remark-gfm）。
  *
- * 只覆盖对话场景的高频语法：标题、有序/无序列表、围栏代码块、
- * 行内代码、粗体、链接。不追求完整 CommonMark —— 若后续需要表格、
- * 嵌套列表等，再评估引入 react-markdown。
+ * 元素样式全部映射到设计 token，不引入新的颜色来源。
+ * 行内代码与围栏代码的区分、任务列表复选框的对齐放在 index.css 的
+ * `.chat-markdown` 作用域里 —— 组件映射无法区分 `<code>` 是否位于 `<pre>` 内。
  *
- * 链接刻意渲染为不可点击的样式化文本：渲染进程尚未注册
- * window.open 处理策略，点击会由 Electron 默认行为新开窗口。
+ * 安全：react-markdown 默认转义原始 HTML（不经 rehype-raw），CSP 无需放宽；
+ * 链接刻意渲染为不可点击的样式化文本，因为 main 进程未注册
+ * window.open / will-navigate 处理策略，点击会由 Electron 默认行为接管。
  */
 
-type Block =
-  | { kind: 'code'; lang: string; content: string }
-  | { kind: 'heading'; level: number; text: string }
-  | { kind: 'list'; ordered: boolean; items: string[] }
-  | { kind: 'paragraph'; text: string }
-
-const FENCE = /^```(\w*)\s*$/
-const CLOSING_FENCE = /^```\s*$/
-const HEADING = /^(#{1,4})\s+(.*)$/
-const BULLET = /^\s*[-*+]\s+(.*)$/
-const ORDERED = /^\s*\d+\.\s+(.*)$/
-
-function parseBlocks(source: string): Block[] {
-  const lines = source.replace(/\r\n/g, '\n').split('\n')
-  const blocks: Block[] = []
-  let index = 0
-
-  while (index < lines.length) {
-    const line = lines[index]
-
-    const fence = line.match(FENCE)
-    if (fence) {
-      const buffer: string[] = []
-      index += 1
-      while (index < lines.length && !CLOSING_FENCE.test(lines[index])) {
-        buffer.push(lines[index])
-        index += 1
-      }
-      index += 1 // 跳过结束围栏（缺失时越界，循环自然结束）
-      blocks.push({ kind: 'code', lang: fence[1] ?? '', content: buffer.join('\n') })
-      continue
-    }
-
-    const heading = line.match(HEADING)
-    if (heading) {
-      blocks.push({ kind: 'heading', level: heading[1].length, text: heading[2] })
-      index += 1
-      continue
-    }
-
-    const isOrdered = ORDERED.test(line)
-    if (isOrdered || BULLET.test(line)) {
-      const pattern = isOrdered ? ORDERED : BULLET
-      const items: string[] = []
-      while (index < lines.length) {
-        const matched = lines[index].match(pattern)
-        if (!matched) break
-        items.push(matched[1])
-        index += 1
-      }
-      blocks.push({ kind: 'list', ordered: isOrdered, items })
-      continue
-    }
-
-    if (!line.trim()) {
-      index += 1
-      continue
-    }
-
-    const buffer: string[] = []
-    while (index < lines.length) {
-      const current = lines[index]
-      if (
-        !current.trim() ||
-        FENCE.test(current) ||
-        HEADING.test(current) ||
-        BULLET.test(current) ||
-        ORDERED.test(current)
-      ) {
-        break
-      }
-      buffer.push(current)
-      index += 1
-    }
-    blocks.push({ kind: 'paragraph', text: buffer.join('\n') })
-  }
-
-  return blocks
+const COMPONENTS: Components = {
+  h1: ({ children }) => (
+    <h1 className="text-[15px] font-semibold text-foreground">{children}</h1>
+  ),
+  h2: ({ children }) => <h2 className="text-sm font-semibold text-foreground">{children}</h2>,
+  h3: ({ children }) => (
+    <h3 className="text-[13px] font-semibold text-foreground">{children}</h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+    </h4>
+  ),
+  p: ({ children }) => <p className="text-xs leading-relaxed">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="flex list-disc flex-col gap-1 pl-5 text-xs marker:text-muted-foreground">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs marker:text-muted-foreground">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => <li className="text-xs leading-relaxed">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="flex flex-col gap-1 border-l-2 border-border pl-3 text-xs text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="border-t border-border" />,
+  table: ({ children, style }) => (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full border-collapse" style={style}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-accent/40">{children}</thead>,
+  th: ({ children, style }) => (
+    <th
+      style={style}
+      className="border-b border-border px-2 py-1 text-left text-[11px] font-medium text-foreground"
+    >
+      {children}
+    </th>
+  ),
+  td: ({ children, style }) => (
+    <td
+      style={style}
+      className="border-b border-border/60 px-2 py-1 align-top text-xs leading-relaxed"
+    >
+      {children}
+    </td>
+  ),
+  pre: ({ node, children }) => {
+    const language = languageOf(node)
+    return (
+      <div className="overflow-hidden rounded-md border border-border bg-background">
+        {language && (
+          <div className="border-b border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            {language}
+          </div>
+        )}
+        <pre className="max-h-96 overflow-auto p-2.5">{children}</pre>
+      </div>
+    )
+  },
+  a: ({ children, href }) => (
+    <span title={href} className="text-info underline decoration-info/40 underline-offset-2">
+      {children}
+    </span>
+  ),
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  del: ({ children }) => <del className="text-muted-foreground line-through">{children}</del>,
+  img: ({ alt }) => (
+    <span className="text-[11px] text-muted-foreground">[图片：{alt ?? '无描述'}]</span>
+  )
 }
 
-const INLINE_PATTERN = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)]+\))/g
-
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  const nodes: ReactNode[] = []
-  let lastIndex = 0
-  let tokenIndex = 0
-  let match: RegExpExecArray | null
-
-  INLINE_PATTERN.lastIndex = 0
-  while ((match = INLINE_PATTERN.exec(text)) !== null) {
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
-
-    const token = match[0]
-    const key = `${keyPrefix}-t${tokenIndex++}`
-
-    if (token.startsWith('`')) {
-      nodes.push(
-        <code
-          key={key}
-          className="rounded bg-accent px-1 py-0.5 font-mono text-[11px] text-foreground"
-        >
-          {token.slice(1, -1)}
-        </code>
-      )
-    } else if (token.startsWith('**')) {
-      nodes.push(
-        <strong key={key} className="font-semibold text-foreground">
-          {token.slice(2, -2)}
-        </strong>
-      )
-    } else {
-      const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
-      nodes.push(
-        <span
-          key={key}
-          title={link?.[2]}
-          className="text-info underline decoration-info/40 underline-offset-2"
-        >
-          {link?.[1] ?? token}
-        </span>
-      )
-    }
-
-    lastIndex = match.index + token.length
-  }
-
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
-  return nodes
-}
-
-const HEADING_CLASS: Record<number, string> = {
-  1: 'text-base font-semibold',
-  2: 'text-sm font-semibold',
-  3: 'text-xs font-semibold',
-  4: 'text-xs font-semibold text-muted-foreground'
-}
-
-export function MarkdownText({
-  text,
-  className
-}: {
-  text: string
-  className?: string
-}): JSX.Element {
-  const blocks = parseBlocks(text)
-
+export function MarkdownText({ text, className }: { text: string; className?: string }): JSX.Element {
   return (
-    <div className={cn('flex flex-col gap-2 break-words', className)}>
-      {blocks.map((block, index) => {
-        const key = `b${index}`
-
-        if (block.kind === 'code') {
-          return (
-            <div key={key} className="overflow-hidden rounded-md border border-border bg-background">
-              {block.lang && (
-                <div className="border-b border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {block.lang}
-                </div>
-              )}
-              <pre className="max-h-80 overflow-auto p-2.5">
-                <code className="font-mono text-[11px] leading-relaxed text-foreground">
-                  {block.content}
-                </code>
-              </pre>
-            </div>
-          )
-        }
-
-        if (block.kind === 'heading') {
-          return (
-            <div key={key} className={cn('mt-1', HEADING_CLASS[block.level] ?? 'text-xs font-semibold')}>
-              {renderInline(block.text, key)}
-            </div>
-          )
-        }
-
-        if (block.kind === 'list') {
-          const ListTag = block.ordered ? 'ol' : 'ul'
-          return (
-            <ListTag
-              key={key}
-              className={cn(
-                'flex flex-col gap-1 pl-4 text-xs',
-                block.ordered ? 'list-decimal' : 'list-disc'
-              )}
-            >
-              {block.items.map((item, itemIndex) => (
-                <li key={`${key}-${itemIndex}`} className="leading-relaxed">
-                  {renderInline(item, `${key}-${itemIndex}`)}
-                </li>
-              ))}
-            </ListTag>
-          )
-        }
-
-        return (
-          <p key={key} className="whitespace-pre-wrap text-xs leading-relaxed">
-            {renderInline(block.text, key)}
-          </p>
-        )
-      })}
+    <div className={cn('chat-markdown flex flex-col gap-2 break-words', className)}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+        {text}
+      </ReactMarkdown>
     </div>
   )
+}
+
+/** 从 `<pre>` 的 hast 节点里读出 `<code class="language-xxx">` 的语言名 */
+function languageOf(node: unknown): string | undefined {
+  if (!node || typeof node !== 'object') return undefined
+  const children = (node as { children?: unknown[] }).children
+  const first = Array.isArray(children) ? children[0] : undefined
+  if (!first || typeof first !== 'object') return undefined
+
+  const properties = (first as { properties?: Record<string, unknown> }).properties
+  const raw = properties?.className
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/\s+/) : []
+  const match = list.find(
+    (item): item is string => typeof item === 'string' && item.startsWith('language-')
+  )
+
+  return match ? match.slice('language-'.length) : undefined
 }

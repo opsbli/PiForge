@@ -69,45 +69,55 @@ function MessageRow({ message }: { message: ChatMessage }): JSX.Element {
     return <ToolCallCard message={message} />
   }
 
+  // 摘要：虚框 + 警告色浅底，与工具卡片、正文都不同
   if (message.role === 'note') {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card/40 px-3 py-2">
-        <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="flex gap-2.5">
+        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
           <ScrollText className="size-3" />
-          {message.title}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 text-[10px] font-medium text-warning">{message.title}</div>
+          <div className="rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3 py-2">
+            <MarkdownText text={message.text} />
+          </div>
         </div>
-        <MarkdownText text={message.text} className="text-muted-foreground" />
       </div>
     )
   }
 
+  // 用户：右对齐实底气泡
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-xs text-secondary-foreground">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            <User className="size-3" />
-            你
-          </div>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-1.5 pr-1 text-[10px] font-medium text-muted-foreground">
+          <User className="size-3" />
+          你
+        </div>
+        <div className="max-w-[85%] rounded-xl rounded-br-sm border border-border/60 bg-secondary px-3 py-2 text-xs text-secondary-foreground">
           <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
         </div>
       </div>
     )
   }
 
+  // 助手：左对齐、无休口背景，用左侧色轨 + 角色标签区分
   return (
     <div className="flex gap-2.5">
-      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-muted-foreground">
-        <Sparkles className="size-3" />
-      </span>
-      <div className="min-w-0 flex-1 pt-0.5">
+      <div aria-hidden className="w-0.5 shrink-0 rounded-full bg-info/50" />
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+          <Sparkles className="size-3 text-info" />
+          助手
+          {message.streaming && <span className="text-info">生成中…</span>}
+        </div>
         {message.text ? (
           <MarkdownText text={message.text} />
         ) : (
           <p className="text-xs text-muted-foreground">思考中…</p>
         )}
         {message.streaming && (
-          <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle" />
+          <span className="mt-1 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle" />
         )}
       </div>
     </div>
