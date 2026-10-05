@@ -1,7 +1,14 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { registerAgentIpc, registerSettingsIpc } from './ipc'
+import {
+  registerAgentIpc,
+  registerSettingsIpc,
+  registerFsIpc,
+  registerTerminalIpc,
+  disposeTerminals
+} from './ipc'
 import { agentHost } from './agent-host'
+import { setWorkspace } from './workspace'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -31,7 +38,10 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerAgentIpc()
   registerSettingsIpc()
-  // 启动 Agent Utility Process（阶段六会改为用户选择的工作区）
+  registerFsIpc()
+  registerTerminalIpc()
+  // 启动时默认把当前目录作为工作区（用户可随时用「打开文件夹」切换）
+  setWorkspace(process.env.PIFORGE_WORKSPACE ?? process.cwd())
   agentHost.start(process.env.PIFORGE_WORKSPACE ?? process.cwd())
   createWindow()
 
@@ -45,5 +55,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  disposeTerminals()
   agentHost.dispose()
 })
