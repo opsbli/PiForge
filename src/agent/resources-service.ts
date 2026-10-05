@@ -37,6 +37,10 @@ interface RawSkill {
 interface RawDiagnostic {
   type?: string
   message?: string
+  /** 扩展加载错误的字段名（LoadExtensionsResult.errors） */
+  error?: string
+  /** 扩展加载告警的字段名（LoadExtensionsResult.warnings） */
+  warning?: string
   path?: string
 }
 
@@ -58,13 +62,30 @@ function toExtensionInfo(extension: RawExtension): ExtensionInfo {
   }
 }
 
-function toDiagnostics(list: RawDiagnostic[] | undefined): ResourceDiagnosticInfo[] {
+/**
+ * 诊断信息映射。
+ *
+ * SDK 有三套字段名：`ResourceDiagnostic.message`（skill / prompt / theme）、
+ * `LoadExtensionsResult.errors[].error`、`LoadExtensionsResult.warnings[].warning`。
+ * 只读 `message` 会把扩展加载失败的原因渲染成 `[object Object]`，恰好丢掉最需要的
+ * 信息，因此逐个兼容；严重级别无法从条目自身判断时由调用方传入
+ * （warnings 数组里的项没有 type 字段，默认判为 error 是错的）。
+ */
+function toDiagnostics(
+  list: RawDiagnostic[] | undefined,
+  defaultSeverity: ResourceDiagnosticInfo['severity']
+): ResourceDiagnosticInfo[] {
   if (!Array.isArray(list)) return []
+
   return list.map((item) => ({
     path: item.path ?? '',
-    message: item.message ?? String(item),
-    // collision 归入 error 一档，避免 UI 出现第三种类别
-    severity: item.type === 'warning' ? 'warning' : 'error'
+    message: item.message ?? item.error ?? item.warning ?? JSON.stringify(item),
+    severity:
+      item.type === 'warning'
+        ? 'warning'
+        : item.type === 'error' || item.type === 'collision'
+          ? 'error'
+          : defaultSeverity
   }))
 }
 
@@ -92,16 +113,16 @@ export function buildResourcesSnapshot(
   const themesResult = loader.getThemes()
   const agentsFilesResult = loader.getAgentsFiles()
 
-  const extensionWarnings = toDiagnostics([
-    ...(extensionsResult.errors as unknown as RawDiagnostic[]),
-    ...((extensionsResult.warnings ?? []) as unknown as RawDiagnostic[])
-  ])
+  const extensionDiagnostics = [
+    ...toDiagnostics(extensionsResult.errors as unknown as RawDiagnostic[], 'error'),
+    ...toDiagnostics((extensionsResult.warnings ?? []) as unknown as RawDiagnostic[], 'warning')
+  ]
 
   return {
     extensions: (extensionsResult.extensions as unknown as RawExtension[]).map(toExtensionInfo),
-    extensionDiagnostics: extensionWarnings,
+    extensionDiagnostics,
     skills: (skillsResult.skills as unknown as RawSkill[]).map(toSkillInfo),
-    skillDiagnostics: toDiagnostics(skillsResult.diagnostics as unknown as RawDiagnostic[]),
+    skillDiagnostics: toDiagnostics(skillsResult.diagnostics as unknown as RawDiagnostic[], 'error'),
     counts: {
       skills: skillsResult.skills.length,
       prompts: promptsResult.prompts.length,
