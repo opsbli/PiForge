@@ -145,6 +145,7 @@ function Composer({
   const [activeIndex, setActiveIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachments = useComposerStore((s) => s.attachments)
+  const addPaths = useComposerStore((s) => s.addPaths)
   const removeAttachment = useComposerStore((s) => s.removeAttachment)
   const clearAttachments = useComposerStore((s) => s.clearAttachments)
 
@@ -186,6 +187,23 @@ function Composer({
   const insertMention = (item: MentionItem): void => {
     if (!mention) return
     const caret = textareaRef.current?.selectionStart ?? value.length
+
+    // @ 引用文件：与 📎 保持一致，只加输入框内部的 chip，不在正文里留标记
+    if (mention.kind === '@' && item.payload) {
+      const next = `${value.slice(0, mention.start)}${value.slice(caret)}`
+      const position = mention.start
+      setValue(next)
+      setMention(null)
+      addPaths([item.payload])
+      window.requestAnimationFrame(() => {
+        const element = textareaRef.current
+        if (!element) return
+        element.focus()
+        element.setSelectionRange(position, position)
+      })
+      return
+    }
+
     const next = `${value.slice(0, mention.start)}${mention.kind}${item.insert} ${value.slice(caret)}`
     const position = mention.start + 1 + item.insert.length + 1
     setValue(next)

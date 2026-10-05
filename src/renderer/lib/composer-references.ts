@@ -23,6 +23,13 @@ export interface MentionItem {
   hint: string
   /** 插入到文本里的内容（不含触发符） */
   insert: string
+  /**
+   * 选中后的实际载荷。
+   *
+   * `@` 文件引用选中后不写文本标记，而是与 📎 一致地变成输入框内部的 chip，
+   * 所以这里带绝对路径供 chip 列表使用。
+   */
+  payload?: string
 }
 
 interface MentionMeta {
@@ -159,7 +166,8 @@ export async function buildMentionItems(
         key: `@${file.relativePath}`,
         label: file.relativePath,
         hint: file.isDirectory ? '文件夹' : '文件',
-        insert: file.relativePath
+        insert: file.relativePath,
+        payload: file.path
       }))
   }
 

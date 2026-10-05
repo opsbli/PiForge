@@ -76,6 +76,8 @@ interface ComposerState {
   loadModels: () => Promise<void>
   setModel: (providerId: string, modelId: string) => Promise<void>
   addAttachments: (kind: 'file' | 'folder') => Promise<void>
+  /** 直接添加路径（@ 引用选中的文件/文件夹） */
+  addPaths: (paths: string[]) => void
   removeAttachment: (path: string) => void
   clearAttachments: () => void
 }
@@ -168,10 +170,16 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   addAttachments: async (kind) => {
     const picked = await window.piforge.pickAttachments(kind)
     if (picked.length === 0) return
-    set((state) => ({
-      attachments: [...state.attachments, ...picked.filter((p) => !state.attachments.includes(p))]
-    }))
+    get().addPaths(picked)
   },
+
+  addPaths: (paths) =>
+    set((state) => ({
+      attachments: [
+        ...state.attachments,
+        ...paths.filter((path) => path && !state.attachments.includes(path))
+      ]
+    })),
 
   removeAttachment: (path) =>
     set((state) => ({ attachments: state.attachments.filter((item) => item !== path) })),
