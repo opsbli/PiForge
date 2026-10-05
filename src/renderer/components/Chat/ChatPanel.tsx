@@ -27,8 +27,15 @@ import {
 } from '@renderer/lib/composer-references'
 import { cn } from '@renderer/lib/utils'
 
-/** 引用 chip 的图标与配色：@ 与 📎 保持一致（中性），其余三类按类型区分 */
-const REFERENCE_STYLE: Record<MentionKind, { icon: LucideIcon; className: string }> = {
+/**
+ * 输入框默认高度的倍数。
+ *
+ * 单行高度（行高 + 上下内边距 + 上下边框）× 该倍数即初始高度；
+ * 内容超出后自动增高，上限 160px。
+ */
+const COMPOSER_HEIGHT_MULTIPLIER = 2
+
+/** 引用 chip 的图标与配色：@ 与 📎 保持一致（中性），其余三类按类型区分 */const REFERENCE_STYLE: Record<MentionKind, { icon: LucideIcon; className: string }> = {
   '@': { icon: Paperclip, className: 'bg-accent/60 text-muted-foreground' },
   '/': { icon: Sparkles, className: 'bg-violet-500/15 text-violet-400' },
   '#': { icon: Plug, className: 'bg-emerald-500/15 text-emerald-400' },
@@ -168,12 +175,22 @@ function Composer({
   const removeReference = useComposerStore((s) => s.removeReference)
   const clearReferences = useComposerStore((s) => s.clearReferences)
 
-  // 随内容自适应高度（上限 160px，超出后内部滚动）
+  // 随内容自适应高度（初始高度 = 单行的 2 倍，上限 160px，超出后内部滚动）
   useEffect(() => {
     const element = textareaRef.current
     if (!element) return
     element.style.height = 'auto'
-    element.style.height = `${Math.min(element.scrollHeight, 160)}px`
+    // 由计算样式推出单行高度，避免把字号/内边距写死在两处
+    const styles = window.getComputedStyle(element)
+    const number = (value: string): number => Number.parseFloat(value) || 0
+    const singleLine =
+      number(styles.lineHeight) +
+      number(styles.paddingTop) +
+      number(styles.paddingBottom) +
+      number(styles.borderTopWidth) +
+      number(styles.borderBottomWidth)
+    const minHeight = singleLine * COMPOSER_HEIGHT_MULTIPLIER
+    element.style.height = `${Math.min(Math.max(element.scrollHeight, minHeight), 160)}px`
   }, [value])
 
   // 引用候选（@ 走文件搜索，需防抖）
