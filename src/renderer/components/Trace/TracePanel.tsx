@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
+import { Activity } from 'lucide-react'
 import type { TraceRow, SpanRow, TraceStats } from '@shared/ipc-types'
+import { Button } from '@renderer/components/ui/button'
+import { Dialog, DialogHeader } from '@renderer/components/ui/dialog'
 import { cn } from '@renderer/lib/utils'
 
 const SPAN_COLOR: Record<string, string> = {
-  user: 'text-sky-400',
+  user: 'text-info',
   llm: 'text-violet-400',
-  tool: 'text-amber-400'
+  tool: 'text-warning'
 }
 
 /** 本地 trace 查看面板：按时间浏览 / 展开事件流 / token 与成本分解 */
@@ -42,36 +45,23 @@ export function TracePanel({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex h-[85vh] w-full max-w-5xl flex-col rounded-lg border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">本地 Trace</h2>
-          <div className="flex items-center gap-4">
-            {stats && (
-              <div className="flex gap-3 text-[11px] text-muted-foreground">
-                <span>运行 {stats.traceCount}</span>
-                <span>↓{stats.totalInputTokens}</span>
-                <span>↑{stats.totalOutputTokens}</span>
-                <span>工具 {stats.toolCallCount}</span>
-                <span className="text-emerald-400">${stats.totalCost.toFixed(4)}</span>
-              </div>
-            )}
-            <button
-              className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-              onClick={() => void load()}
-            >
-              刷新
-            </button>
-            <button
-              className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-              onClick={onClose}
-            >
-              关闭
-            </button>
+    <Dialog open={open} onClose={onClose} className="h-[85vh] max-w-5xl">
+      <DialogHeader title="本地 Trace" icon={<Activity className="size-4" />} onClose={onClose}>
+        {stats && (
+          <div className="flex gap-3 text-[11px] text-muted-foreground">
+            <span>运行 {stats.traceCount}</span>
+            <span>↓{stats.totalInputTokens}</span>
+            <span>↑{stats.totalOutputTokens}</span>
+            <span>工具 {stats.toolCallCount}</span>
+            <span className="text-success">${stats.totalCost.toFixed(4)}</span>
           </div>
-        </div>
+        )}
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          刷新
+        </Button>
+      </DialogHeader>
 
-        <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
           {/* 左：trace 列表 */}
           <div className="w-80 shrink-0 overflow-auto border-r border-border p-2">
             {traces.length === 0 ? (
@@ -91,7 +81,7 @@ export function TracePanel({
                   <div className="truncate text-xs text-foreground">{t.user_prompt || '(空)'}</div>
                   <div className="mt-0.5 flex gap-2 text-[10px] text-muted-foreground">
                     <span>{new Date(t.started_at).toLocaleTimeString('zh-CN')}</span>
-                    <span className={t.status === 'ok' ? 'text-emerald-400' : 'text-red-400'}>
+                    <span className={t.status === 'ok' ? 'text-success' : 'text-destructive'}>
                       {t.status}
                     </span>
                     <span>↓{t.input_tokens} ↑{t.output_tokens}</span>
@@ -124,7 +114,7 @@ export function TracePanel({
                           ↓{s.input_tokens} ↑{s.output_tokens} ${s.cost.toFixed(4)}
                         </span>
                       )}
-                      {s.error && <span className="text-red-400">错误</span>}
+                      {s.error && <span className="text-destructive">错误</span>}
                     </div>
                     {(s.input || s.output) && (
                       <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-background/60 p-1.5 text-[10px] text-muted-foreground">
@@ -138,7 +128,6 @@ export function TracePanel({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

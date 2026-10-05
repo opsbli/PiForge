@@ -1,8 +1,9 @@
 import type { JSX } from 'react'
 import { useEffect } from 'react'
 import { useCostStore } from '@renderer/stores/cost-store'
+import { formatCompactNumber } from '@renderer/lib/format'
 
-/** 成本状态栏：token / 费用 / 缓存命中 */
+/** 会话成本：token / 缓存命中 / 累计费用（中栏标题栏用） */
 export function CostDashboard(): JSX.Element {
   const summary = useCostStore((s) => s.summary)
   const refreshSummary = useCostStore((s) => s.refreshSummary)
@@ -14,26 +15,20 @@ export function CostDashboard(): JSX.Element {
     return () => window.clearInterval(timer)
   }, [refreshSummary])
 
-  const t = summary?.tokenUsage
-  const cacheTotal = (t?.cacheRead ?? 0) + (t?.cacheWrite ?? 0)
-  const inputTotal = (t?.input ?? 0) + cacheTotal
-  const hitRate = inputTotal > 0 ? (t?.cacheRead ?? 0) / inputTotal : 0
+  const usage = summary?.tokenUsage
+  const cacheTotal = (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0)
+  const inputTotal = (usage?.input ?? 0) + cacheTotal
+  const hitRate = inputTotal > 0 ? (usage?.cacheRead ?? 0) / inputTotal : 0
 
   return (
-    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-      <span title="输入 token（含缓存）">↓ {fmt(t?.input ?? 0)}</span>
-      <span title="输出 token">↑ {fmt(t?.output ?? 0)}</span>
-      <span title="缓存读取 token">⇄ {fmt(t?.cacheRead ?? 0)}</span>
+    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+      <span title="输入 token（含缓存）">↓ {formatCompactNumber(usage?.input ?? 0)}</span>
+      <span title="输出 token">↑ {formatCompactNumber(usage?.output ?? 0)}</span>
+      <span title="缓存读取 token">⇄ {formatCompactNumber(usage?.cacheRead ?? 0)}</span>
       <span title="缓存命中率">命中 {(hitRate * 100).toFixed(0)}%</span>
-      <span className="text-emerald-400" title="累计费用（美元）">
+      <span className="text-success" title="累计费用（美元）">
         ${(summary?.cost ?? 0).toFixed(4)}
       </span>
     </div>
   )
-}
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
-  return String(n)
 }

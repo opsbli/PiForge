@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
+import { GitBranch } from 'lucide-react'
 import type { TreeEntry } from '@shared/ipc-types'
+import { Button } from '@renderer/components/ui/button'
+import { Dialog, DialogHeader } from '@renderer/components/ui/dialog'
+import { Textarea } from '@renderer/components/ui/textarea'
 import { cn } from '@renderer/lib/utils'
 
 /** 会话树导航：查看树结构 / 导航到任意节点 / 分支切换时选择总结方式 */
@@ -55,27 +59,14 @@ export function SessionTree({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">会话树</h2>
-          <div className="flex gap-2">
-            <button
-              className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-              onClick={() => void load()}
-            >
-              刷新
-            </button>
-            <button
-              className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-              onClick={onClose}
-            >
-              关闭
-            </button>
-          </div>
-        </div>
+    <Dialog open={open} onClose={onClose} className="h-[80vh] max-w-3xl">
+      <DialogHeader title="会话树" icon={<GitBranch className="size-4" />} onClose={onClose}>
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          刷新
+        </Button>
+      </DialogHeader>
 
-        <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
           {/* 树 */}
           <div className="flex-1 overflow-auto p-3 font-mono text-xs">
             {tree.length === 0 ? (
@@ -123,35 +114,32 @@ export function SessionTree({
                 </label>
 
                 {summarize && (
-                  <textarea
-                    className="h-24 w-full resize-none rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                  <Textarea
+                    className="h-24"
                     placeholder="自定义总结提示词（留空用默认）"
                     value={customInstructions}
-                    onChange={(e) => setCustomInstructions(e.target.value)}
+                    onChange={(event) => setCustomInstructions(event.target.value)}
                   />
                 )}
 
                 <div className="flex gap-2">
-                  <button
-                    className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                  <Button
+                    variant="default"
+                    size="sm"
                     disabled={busy}
                     onClick={() => void doNavigate()}
                   >
                     {busy ? '导航中…' : '确认导航'}
-                  </button>
-                  <button
-                    className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-                    onClick={() => setPending(null)}
-                  >
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPending(null)}>
                     取消
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -177,7 +165,7 @@ function TreeRow({
       <div
         className={cn(
           'flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent',
-          isLeaf && 'bg-emerald-500/15'
+          isLeaf && 'bg-success/15'
         )}
         style={{ paddingLeft: `${depth * 14}px` }}
       >
@@ -191,7 +179,7 @@ function TreeRow({
         <button className="flex-1 truncate text-left" onClick={() => onPick(node)}>
           <span className="text-muted-foreground">{label}</span>{' '}
           {node.preview || node.id}
-          {isLeaf && <span className="ml-1 text-emerald-400">← 当前</span>}
+          {isLeaf && <span className="ml-1 text-success">← 当前</span>}
         </button>
       </div>
       {hasChildren &&

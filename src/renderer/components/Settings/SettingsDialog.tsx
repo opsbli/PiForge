@@ -1,8 +1,12 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useCallback, useEffect, useState, type JSX } from 'react'
+import { Settings as SettingsIcon } from 'lucide-react'
 import type { CredentialStatus } from '@shared/ipc-types'
+import { Button } from '@renderer/components/ui/button'
+import { Dialog, DialogBody, DialogFooter, DialogHeader } from '@renderer/components/ui/dialog'
+import { Input } from '@renderer/components/ui/input'
 import { SandboxSettings } from '@renderer/components/Sandbox/SandboxSettings'
 
-/** 最小设置：写入 DeepSeek API Key（safeStorage 加密存储） */
+/** 设置：写入 DeepSeek API Key（safeStorage 加密存储）+ 执行沙箱配置 */
 export function SettingsDialog({
   open,
   onClose
@@ -14,13 +18,13 @@ export function SettingsDialog({
   const [status, setStatus] = useState<CredentialStatus | null>(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    if (open) {
-      void window.piforge.getCredentialStatus().then(setStatus)
-    }
-  }, [open])
+  const refreshStatus = useCallback(async (): Promise<void> => {
+    setStatus(await window.piforge.getCredentialStatus())
+  }, [])
 
-  if (!open) return null
+  useEffect(() => {
+    if (open) void refreshStatus()
+  }, [open, refreshStatus])
 
   const save = async (): Promise<void> => {
     const key = apiKey.trim()
@@ -28,58 +32,63 @@ export function SettingsDialog({
     setSaving(true)
     await window.piforge.setApiKey(key)
     setApiKey('')
-    setStatus(await window.piforge.getCredentialStatus())
+    await refreshStatus()
     setSaving(false)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl">
-        <h2 className="text-base font-semibold text-foreground">设置 · API Key</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          API Key 使用 Electron safeStorage 加密存储，不会写入 localStorage。
-        </p>
+    <Dialog open={open} onClose={onClose} className="max-w-md">
+      <DialogHeader
+        title="设置"
+        icon={<SettingsIcon className="size-4" />}
+        description="API Key 使用 Electron safeStorage 加密存储，不会写入 localStorage。"
+        onClose={onClose}
+      />
 
-        <div className="mt-4">
-          <label className="text-xs text-muted-foreground">DeepSeek API Key</label>
-          <input
-            type="password"
-            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-            value={apiKey}
-            placeholder="sk-..."
-            onChange={(e) => setApiKey(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void save()
-            }}
-          />
-        </div>
+      <DialogBody>
+        <label htmlFor="piforge-api-key" className="text-[11px] text-muted-foreground">
+          DeepSeek API Key
+        </label>
+        <Input
+          id="piforge-api-key"
+          type="password"
+          className="mt-1"
+          value={apiKey}
+          placeholder="sk-..."
+          onChange={(event) => setApiKey(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void save()
+          }}
+        />
 
         {status && (
-          <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-            <div>加密可用：{status.encryptionAvailable ? '是' : '否（无法安全保存）'}</div>
-            <div>已保存加密 Key：{status.hasStoredKey ? '是' : '否'}</div>
-            <div>正在使用环境变量：{status.usingEnvVar ? '是' : '否'}</div>
-          </div>
+          <dl className="mt-3 space-y-0.5 text-[11px] text-muted-foreground">
+            <StatusRow label="加密可用" value={status.encryptionAvailable ? '是' : '否（无法安全保存）'} />
+            <StatusRow label="已保存加密 Key" value={status.hasStoredKey ? '是' : '否'} />
+            <StatusRow label="正在使用环境变量" value={status.usingEnvVar ? '是' : '否'} />
+          </dl>
         )}
 
         <SandboxSettings />
+      </DialogBody>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-            onClick={onClose}
-          >
-            关闭
-          </button>
-          <button
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
-            disabled={saving || !apiKey.trim()}
-            onClick={() => void save()}
-          >
-            {saving ? '保存中…' : '保存'}
-          </button>
-        </div>
-      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          关闭
+        </Button>
+        <Button variant="default" disabled={saving || !apiKey.trim()} onClick={() => void save()}>
+          {saving ? '保存中…' : '保存'}
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+function StatusRow({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="flex gap-2">
+      <dt>{label}：</dt>
+      <dd>{value}</dd>
     </div>
   )
 }

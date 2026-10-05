@@ -11,6 +11,8 @@ interface WorkspaceState {
   dirty: boolean
   /** 文件树刷新信号（自增触发重载） */
   refreshToken: number
+  /** 最近打开的文件（新的在前，用于「改动」面板） */
+  recentFiles: string[]
 
   setWorkspace: (path: string | null) => void
   openFile: (path: string, content: string) => void
@@ -26,9 +28,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   content: '',
   dirty: false,
   refreshToken: 0,
+  recentFiles: [],
 
   setWorkspace: (path) => set({ workspace: path }),
-  openFile: (path, content) => set({ openFilePath: path, content, dirty: false }),
+  openFile: (path, content) =>
+    set((state) => ({
+      openFilePath: path,
+      content,
+      dirty: false,
+      recentFiles: [path, ...state.recentFiles.filter((item) => item !== path)].slice(0, 20)
+    })),
   setContent: (content) => set({ content, dirty: true }),
   markSaved: () => set({ dirty: false }),
   closeFile: () => set({ openFilePath: null, content: '', dirty: false }),

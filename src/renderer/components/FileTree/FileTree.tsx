@@ -1,20 +1,29 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { FilePlus, FolderPlus, Search, Trash2 } from 'lucide-react'
 import type { FileNode } from '@shared/ipc-types'
+import { Button } from '@renderer/components/ui/button'
+import { Input } from '@renderer/components/ui/input'
+import { ScrollArea } from '@renderer/components/ui/scroll-area'
+import { DirectoryIcon, FileIcon } from '@renderer/components/FileTree/FileIcon'
+import { useLayoutStore } from '@renderer/stores/layout-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 import { cn } from '@renderer/lib/utils'
 
-/** 工作区文件树：展开/折叠/新建/删除 */
+interface CreateCtx {
+  parentDir: string
+  isDirectory: boolean
+  depth: number
+}
+
+/** 工作区文件树：过滤 / 展开 / 新建 / 删除 */
 export function FileTree(): JSX.Element {
   const workspace = useWorkspaceStore((s) => s.workspace)
   const refreshToken = useWorkspaceStore((s) => s.refreshToken)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+  const [filter, setFilter] = useState('')
 
   // 待新建项（Electron 不支持 window.prompt，用内联输入框）
-  const [creating, setCreating] = useState<{
-    parentDir: string
-    isDirectory: boolean
-    depth: number
-  } | null>(null)
+  const [creating, setCreating] = useState<CreateCtx | null>(null)
 
   const startCreate = (parentDir: string, isDirectory: boolean, depth = 0): void => {
     setCreating({ parentDir, isDirectory, depth })
@@ -22,28 +31,47 @@ export function FileTree(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-xs font-semibold text-muted-foreground">资源管理器</span>
-        {workspace && (
-          <div className="flex gap-1">
-            <IconButton title="新建文件" onClick={() => startCreate(workspace, false)}>
-              ＋
-            </IconButton>
-            <IconButton title="新建文件夹" onClick={() => startCreate(workspace, true)}>
-              ▤
-            </IconButton>
-          </div>
-        )}
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            placeholder="过滤文件…"
+            className="h-6 pl-7 text-[11px]"
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="新建文件"
+          aria-label="新建文件"
+          disabled={!workspace}
+          onClick={() => workspace && startCreate(workspace, false)}
+        >
+          <FilePlus />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="新建文件夹"
+          aria-label="新建文件夹"
+          disabled={!workspace}
+          onClick={() => workspace && startCreate(workspace, true)}
+        >
+          <FolderPlus />
+        </Button>
       </div>
 
-      <div className="flex-1 overflow-auto p-2 text-sm">
+      <ScrollArea className="flex-1 px-1.5 py-1.5">
         {!workspace ? (
-          <p className="px-1 text-xs text-muted-foreground">未选择工作区</p>
+          <p className="px-1.5 text-[11px] text-muted-foreground">未选择工作区</p>
         ) : (
           <DirChildren
             dirPath={workspace}
             depth={0}
             refreshToken={refreshToken}
+            filter={filter}
             creating={creating}
             onCreate={startCreate}
             onDone={async () => {
@@ -53,21 +81,25 @@ export function FileTree(): JSX.Element {
             onCancel={() => setCreating(null)}
           />
         )}
-      </div>
+      </ScrollArea>
     </div>
   )
 }
 
-interface CreateCtx {
-  parentDir: string
-  isDirectory: boolean
-  depth: number
+/** 过滤规则：目录始终保留（便于继续下钻），只按关键字过滤文件 */
+function filterNodes(nodes: FileNode[], keyword: string): FileNode[] {
+  if (!keyword) return nodes
+  const lowered = keyword.toLowerCase()
+  return nodes.filter(
+    (node) => node.isDirectory || node.name.toLowerCase().includes(lowered)
+  )
 }
 
 function DirChildren({
   dirPath,
   depth,
   refreshToken,
+  filter,
   creating,
   onCreate,
   onDone,
@@ -76,6 +108,7 @@ function DirChildren({
   dirPath: string
   depth: number
   refreshToken: number
+  filter: string
   creating: CreateCtx | null
   onCreate: (parentDir: string, isDirectory: boolean, depth?: number) => void
   onDone: () => Promise<void>
@@ -95,14 +128,17 @@ function DirChildren({
     void load()
   }, [load, refreshToken])
 
+  const visible = filterNodes(nodes, filter)
+
   return (
     <div>
-      {nodes.map((node) => (
+      {visible.map((node) => (
         <TreeNode
           key={node.path}
           node={node}
           depth={depth}
           refreshToken={refreshToken}
+          filter={filter}
           creating={creating}
           onCreate={onCreate}
           onDone={onDone}
@@ -126,6 +162,7 @@ function TreeNode({
   node,
   depth,
   refreshToken,
+  filter,
   creating,
   onCreate,
   onDone,
@@ -134,6 +171,7 @@ function TreeNode({
   node: FileNode
   depth: number
   refreshToken: number
+  filter: string
   creating: CreateCtx | null
   onCreate: (parentDir: string, isDirectory: boolean, depth?: number) => void
   onDone: () => Promise<void>
@@ -145,19 +183,20 @@ function TreeNode({
 
   const handleClick = async (): Promise<void> => {
     if (node.isDirectory) {
-      setOpen((v) => !v)
+      setOpen((value) => !value)
       return
     }
     try {
       const content = await window.piforge.readFile(node.path)
       openFile(node.path, content)
+      // 打开文件后把中栏切到编辑器
+      useLayoutStore.getState().setMainView('editor')
     } catch (err) {
       window.alert(`打开失败：${String(err)}`)
     }
   }
 
   const remove = async (): Promise<void> => {
-    // Electron 支持 window.confirm
     if (!window.confirm(`确定删除 ${node.relativePath}？`)) return
     try {
       await window.piforge.deleteEntry(node.path)
@@ -173,37 +212,57 @@ function TreeNode({
     <div>
       <div
         className={cn(
-          'group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent',
-          isActive && 'bg-accent'
+          'group flex h-6 items-center gap-1.5 rounded px-1.5 transition-colors',
+          isActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
         )}
-        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
       >
-        <button className="flex-1 truncate text-left text-xs" onClick={() => void handleClick()}>
-          {node.isDirectory ? (open ? '▾ ' : '▸ ') : '· '}
-          {node.name}
-        </button>
-        {node.isDirectory && (
-          <button
-            className="hidden text-xs text-muted-foreground group-hover:block"
-            title="在此新建文件"
-            onClick={() => onCreate(node.path, false, depth + 1)}
-          >
-            ＋
-          </button>
-        )}
         <button
-          className="hidden text-xs text-red-400 group-hover:block"
-          title="删除"
-          onClick={() => void remove()}
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          title={node.relativePath}
+          onClick={() => void handleClick()}
         >
-          ×
+          {node.isDirectory ? (
+            <DirectoryIcon open={open} />
+          ) : (
+            <FileIcon name={node.name} />
+          )}
+          <span className={cn('truncate text-xs', isActive && 'text-foreground')}>
+            {node.name}
+          </span>
         </button>
+
+        <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
+          {node.isDirectory && (
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              title="在此新建文件"
+              aria-label="在此新建文件"
+              onClick={() => onCreate(node.path, false, depth + 1)}
+            >
+              <FilePlus className="size-3" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+            title="删除"
+            aria-label="删除"
+            onClick={() => void remove()}
+          >
+            <Trash2 className="size-3" />
+          </button>
+        </div>
       </div>
+
       {node.isDirectory && open && (
         <DirChildren
           dirPath={node.path}
           depth={depth + 1}
           refreshToken={refreshToken}
+          filter={filter}
           creating={creating}
           onCreate={onCreate}
           onDone={onDone}
@@ -247,6 +306,7 @@ function NewEntryInput({
       // 新建文件后自动打开，方便直接编辑
       if (!isDirectory) {
         useWorkspaceStore.getState().openFile(node.path, '')
+        useLayoutStore.getState().setMainView('editor')
       }
     } catch (err) {
       setError(String(err))
@@ -254,40 +314,20 @@ function NewEntryInput({
   }
 
   return (
-    <div style={{ paddingLeft: `${depth * 12 + 4}px` }} className="py-0.5">
-      <input
+    <div style={{ paddingLeft: `${depth * 12 + 6}px` }} className="py-0.5">
+      <Input
         ref={ref}
-        className="w-full rounded border border-border bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+        className="h-6 text-[11px]"
         placeholder={isDirectory ? '文件夹名' : '文件名'}
         value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit()
-          if (e.key === 'Escape') onCancel()
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') void submit()
+          if (event.key === 'Escape') onCancel()
         }}
         onBlur={() => void submit()}
       />
-      {error && <p className="mt-0.5 text-[10px] text-red-400">{error}</p>}
+      {error && <p className="mt-0.5 text-[10px] text-destructive">{error}</p>}
     </div>
-  )
-}
-
-function IconButton({
-  children,
-  title,
-  onClick
-}: {
-  children: React.ReactNode
-  title: string
-  onClick: () => void
-}): JSX.Element {
-  return (
-    <button
-      className="rounded border border-border px-1.5 text-xs hover:bg-accent"
-      title={title}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   )
 }

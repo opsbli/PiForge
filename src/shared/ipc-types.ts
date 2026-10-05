@@ -55,6 +55,13 @@ export const IPC = {
   SESSION_NEW: 'session:new',
   SESSION_SWITCH: 'session:switch',
 
+  // 窗口控制（自定义标题栏）
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
+  WINDOW_CLOSE: 'window:close',
+  WINDOW_IS_MAXIMIZED: 'window:is-maximized',
+  WINDOW_MAXIMIZE_CHANGED: 'window:maximize-changed',
+
   // 终端
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_INPUT: 'terminal:input',
@@ -237,6 +244,13 @@ export interface PiForgeApi {
   writeFile(filePath: string, content: string): Promise<void>
   createEntry(parentDir: string, name: string, isDirectory: boolean): Promise<FileNode>
   deleteEntry(targetPath: string): Promise<void>
+
+  // 窗口控制（自定义标题栏）
+  minimizeWindow(): Promise<void>
+  toggleMaximizeWindow(): Promise<boolean>
+  closeWindow(): Promise<void>
+  isWindowMaximized(): Promise<boolean>
+  onWindowMaximizedChange(cb: (maximized: boolean) => void): () => void
 
   // 终端
   createTerminal(cwd?: string): Promise<string>

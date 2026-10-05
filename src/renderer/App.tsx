@@ -1,25 +1,34 @@
 import { useEffect, useState, type JSX } from 'react'
-import { FileTree } from '@renderer/components/FileTree/FileTree'
-import { Editor } from '@renderer/components/Editor/Editor'
-import { TerminalPanel } from '@renderer/components/Terminal/TerminalPanel'
-import { ChatPanel } from '@renderer/components/Chat/ChatPanel'
+import { ResizeHandle } from '@renderer/components/ui/resize-handle'
+import { TitleBar } from '@renderer/components/layout/TitleBar'
+import { Sidebar } from '@renderer/components/layout/Sidebar'
+import { CenterStage } from '@renderer/components/layout/CenterStage'
+import { RightPanel } from '@renderer/components/layout/RightPanel'
 import { ApprovalDialog } from '@renderer/components/Approval/ApprovalDialog'
 import { SettingsDialog } from '@renderer/components/Settings/SettingsDialog'
-import { SessionList } from '@renderer/components/SessionTree/SessionList'
 import { MemoryPanel } from '@renderer/components/Memory/MemoryPanel'
 import { SessionTree } from '@renderer/components/SessionTree/SessionTree'
-import { SandboxBadge } from '@renderer/components/Sandbox/SandboxSettings'
 import { TracePanel } from '@renderer/components/Trace/TracePanel'
-import { CostDashboard } from '@renderer/components/Cost/CostDashboard'
 import { useApprovalStore } from '@renderer/stores/approval-store'
+import { useCostStore } from '@renderer/stores/cost-store'
+import { useLayoutStore } from '@renderer/stores/layout-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
 export default function App(): JSX.Element {
   const setPending = useApprovalStore((s) => s.setPending)
-  const workspace = useWorkspaceStore((s) => s.workspace)
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
+  const newSession = useCostStore((s) => s.newSession)
+  const refreshSessions = useCostStore((s) => s.refreshSessions)
+  const refreshSummary = useCostStore((s) => s.refreshSummary)
+
+  const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
+  const rightPanelOpen = useLayoutStore((s) => s.rightPanelOpen)
+  const resizeSidebar = useLayoutStore((s) => s.resizeSidebar)
+  const resetSidebarWidth = useLayoutStore((s) => s.resetSidebarWidth)
+  const resizeRightPanel = useLayoutStore((s) => s.resizeRightPanel)
+  const resetRightPanelWidth = useLayoutStore((s) => s.resetRightPanelWidth)
+
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [sessionsOpen, setSessionsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const [traceOpen, setTraceOpen] = useState(false)
@@ -35,87 +44,57 @@ export default function App(): JSX.Element {
     void window.piforge.getWorkspace().then(setWorkspace)
   }, [setWorkspace])
 
-  const openFolder = async (): Promise<void> => {
-    const selected = await window.piforge.selectWorkspace()
-    if (selected) setWorkspace(selected)
-  }
+  // 启动后拉一次会话列表与成本摘要
+  useEffect(() => {
+    void refreshSessions()
+    void refreshSummary()
+  }, [refreshSessions, refreshSummary])
+
+  // Ctrl/Cmd+N 新建会话（未选工作区时不响应）
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') {
+        if (!useWorkspaceStore.getState().workspace) return
+        event.preventDefault()
+        void newSession()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [newSession])
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold">PiForge Desktop</h1>
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => void openFolder()}
-          >
-            打开文件夹
-          </button>
-          <span
-            className="max-w-[300px] truncate text-xs text-muted-foreground"
-            title={workspace ?? ''}
-          >
-            {workspace ?? '未选择工作区'}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <SandboxBadge />
-          <CostDashboard />
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => setTraceOpen(true)}
-          >
-            Trace
-          </button>
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => setTreeOpen(true)}
-          >
-            会话树
-          </button>
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => setMemoryOpen(true)}
-          >
-            记忆
-          </button>
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => setSessionsOpen(true)}
-          >
-            会话
-          </button>
-          <button
-            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            onClick={() => setSettingsOpen(true)}
-          >
-            设置
-          </button>
-        </div>
-      </header>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar onOpenSettings={() => setSettingsOpen(true)} />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 border-r border-border">
-          <FileTree />
-        </aside>
+        {!sidebarCollapsed && (
+          <>
+            <Sidebar
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSessionTree={() => setTreeOpen(true)}
+              onOpenMemory={() => setMemoryOpen(true)}
+              onOpenTrace={() => setTraceOpen(true)}
+            />
+            <ResizeHandle onDrag={resizeSidebar} onReset={resetSidebarWidth} />
+          </>
+        )}
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1">
-            <Editor />
-          </div>
-          <div className="h-56 shrink-0 border-t border-border">
-            <TerminalPanel />
-          </div>
-        </main>
+        <CenterStage />
 
-        <aside className="w-96 shrink-0 border-l border-border">
-          <ChatPanel />
-        </aside>
+        {rightPanelOpen && (
+          <>
+            <ResizeHandle
+              onDrag={(delta) => resizeRightPanel(-delta)}
+              onReset={resetRightPanelWidth}
+            />
+            <RightPanel />
+          </>
+        )}
       </div>
 
       <ApprovalDialog />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <SessionList open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
       <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
       <SessionTree open={treeOpen} onClose={() => setTreeOpen(false)} />
       <TracePanel open={traceOpen} onClose={() => setTraceOpen(false)} />

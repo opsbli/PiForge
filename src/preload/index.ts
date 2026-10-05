@@ -65,6 +65,23 @@ const api: PiForgeApi = {
     ipcRenderer.invoke(IPC.FS_CREATE, parentDir, name, isDirectory),
   deleteEntry: (targetPath: string) => ipcRenderer.invoke(IPC.FS_DELETE, targetPath),
 
+  // ---- 窗口控制（自定义标题栏）----
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.WINDOW_MINIMIZE),
+
+  toggleMaximizeWindow: (): Promise<boolean> => ipcRenderer.invoke(IPC.WINDOW_TOGGLE_MAXIMIZE),
+
+  closeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
+
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke(IPC.WINDOW_IS_MAXIMIZED),
+
+  onWindowMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
+    const listener = (_event: unknown, payload: boolean): void => cb(payload)
+    ipcRenderer.on(IPC.WINDOW_MAXIMIZE_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.WINDOW_MAXIMIZE_CHANGED, listener)
+    }
+  },
+
   // ---- 终端 ----
   createTerminal: (cwd?: string) => ipcRenderer.invoke(IPC.TERMINAL_CREATE, cwd),
   sendTerminalInput: (terminalId: string, data: string) =>

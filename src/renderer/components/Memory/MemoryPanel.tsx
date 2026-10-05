@@ -1,4 +1,10 @@
 import { useEffect, useState, type JSX } from 'react'
+import { Brain } from 'lucide-react'
+import { Button } from '@renderer/components/ui/button'
+import { Dialog, DialogHeader } from '@renderer/components/ui/dialog'
+import { Input } from '@renderer/components/ui/input'
+import { ScrollArea } from '@renderer/components/ui/scroll-area'
+import { Textarea } from '@renderer/components/ui/textarea'
 import { useMemoryStore } from '@renderer/stores/memory-store'
 import { cn } from '@renderer/lib/utils'
 
@@ -52,13 +58,13 @@ export function MemoryPanel({
 
   if (!open) return null
 
-  const filtered = entries.filter((e) => {
+  const filtered = entries.filter((entry) => {
     if (!search.trim()) return true
-    const q = search.toLowerCase()
+    const keyword = search.toLowerCase()
     return (
-      e.name.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.body.toLowerCase().includes(q)
+      entry.name.toLowerCase().includes(keyword) ||
+      entry.description.toLowerCase().includes(keyword) ||
+      entry.body.toLowerCase().includes(keyword)
     )
   })
 
@@ -77,126 +83,116 @@ export function MemoryPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex h-[80vh] w-full max-w-4xl flex-col rounded-lg border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">记忆管理</h2>
-          <div className="flex gap-2">
-            <input
-              className="w-48 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-              placeholder="搜索记忆…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <button
-              className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground"
-              onClick={startCreate}
-            >
-              新建记忆
-            </button>
-            <button
-              className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
-              onClick={onClose}
-            >
-              关闭
-            </button>
-          </div>
-        </div>
+    <Dialog open={open} onClose={onClose} className="h-[80vh] max-w-4xl">
+      <DialogHeader title="记忆管理" icon={<Brain className="size-4" />} onClose={onClose}>
+        <Input
+          className="w-44"
+          placeholder="搜索记忆…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <Button variant="default" size="sm" onClick={startCreate}>
+          新建记忆
+        </Button>
+      </DialogHeader>
 
-        <div className="flex min-h-0 flex-1">
-          {/* 左：列表 */}
-          <div className="w-72 shrink-0 overflow-auto border-r border-border p-2">
-            {filtered.length === 0 ? (
-              <p className="px-1 text-xs text-muted-foreground">
-                {entries.length === 0 ? '暂无记忆（点「新建记忆」添加）' : '无匹配结果'}
-              </p>
-            ) : (
-              filtered.map((e) => (
-                <button
-                  key={e.name}
-                  className={cn(
-                    'mb-1 w-full rounded-md border border-border px-2 py-1.5 text-left hover:bg-accent',
-                    selected?.name === e.name && 'bg-accent'
-                  )}
-                  onClick={() => void select(e.name)}
+      <div className="flex min-h-0 flex-1">
+        {/* 左：列表 */}
+        <ScrollArea className="w-72 shrink-0 border-r border-border p-2">
+          {filtered.length === 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">
+              {entries.length === 0 ? '暂无记忆（点「新建记忆」添加）' : '无匹配结果'}
+            </p>
+          ) : (
+            filtered.map((entry) => (
+              <button
+                key={entry.name}
+                type="button"
+                className={cn(
+                  'mb-1 w-full rounded-md border border-border px-2 py-1.5 text-left transition-colors hover:bg-accent',
+                  selected?.name === entry.name && 'bg-accent'
+                )}
+                onClick={() => void select(entry.name)}
+              >
+                <div className="truncate text-xs text-foreground">{entry.name}</div>
+                <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="rounded bg-secondary px-1">
+                    {TYPE_LABEL[entry.type] ?? entry.type}
+                  </span>
+                  <span className="truncate">{entry.description}</span>
+                </div>
+              </button>
+            ))
+          )}
+        </ScrollArea>
+
+        {/* 右：详情 / 编辑 */}
+        <div className="flex min-w-0 flex-1 flex-col p-3">
+          {!selected && !creating ? (
+            <p className="text-xs text-muted-foreground">从左侧选择一条记忆查看或编辑</p>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                <Input
+                  className="h-6"
+                  placeholder="记忆名（文件名，不含 .md）"
+                  value={draft.name}
+                  disabled={!creating}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                />
+                <Input
+                  className="h-6"
+                  placeholder="一句话描述（写入索引）"
+                  value={draft.description}
+                  onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                />
+                <select
+                  className="h-6 w-full rounded-md border border-input bg-card px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
+                  value={draft.type}
+                  onChange={(event) => setDraft({ ...draft, type: event.target.value })}
                 >
-                  <div className="truncate text-xs text-foreground">{e.name}</div>
-                  <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <span className="rounded bg-secondary px-1">
-                      {TYPE_LABEL[e.type] ?? e.type}
-                    </span>
-                    <span className="truncate">{e.description}</span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
+                  {Object.entries(TYPE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <Textarea
+                  className="h-64 font-mono"
+                  placeholder="记忆正文（Markdown）"
+                  value={draft.body}
+                  onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+                />
+              </div>
 
-          {/* 右：详情 / 编辑 */}
-          <div className="flex min-w-0 flex-1 flex-col p-3">
-            {!selected && !creating ? (
-              <p className="text-xs text-muted-foreground">从左侧选择一条记忆查看或编辑</p>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <input
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="记忆名（文件名，不含 .md）"
-                    value={draft.name}
-                    disabled={!creating}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  />
-                  <input
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="一句话描述（写入索引）"
-                    value={draft.description}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                  />
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none"
-                    value={draft.type}
-                    onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+              <div className="mt-3 flex justify-end gap-2">
+                {selected && !creating && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      if (window.confirm(`确定删除记忆 ${selected.name}？`)) {
+                        void remove(selected.name)
+                      }
+                    }}
                   >
-                    {Object.entries(TYPE_LABEL).map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <textarea
-                    className="h-64 w-full resize-none rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="记忆正文（Markdown）"
-                    value={draft.body}
-                    onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                  />
-                </div>
-
-                <div className="mt-3 flex justify-end gap-2">
-                  {selected && !creating && (
-                    <button
-                      className="rounded-md border border-red-500/50 px-3 py-1 text-xs text-red-400 hover:bg-red-500/10"
-                      onClick={() => {
-                        if (window.confirm(`确定删除记忆 ${selected.name}？`)) {
-                          void remove(selected.name)
-                        }
-                      }}
-                    >
-                      删除
-                    </button>
-                  )}
-                  <button
-                    className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
-                    disabled={!draft.name.trim()}
-                    onClick={() => void submit()}
-                  >
-                    保存
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                    删除
+                  </Button>
+                )}
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!draft.name.trim()}
+                  onClick={() => void submit()}
+                >
+                  保存
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }
