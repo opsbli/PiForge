@@ -6,12 +6,23 @@ import {
   settingsPaths
 } from './settings-service'
 import { applySettingsWrite } from './settings-write'
+import {
+  patchMcpServer,
+  readMcpConfig,
+  removeMcpServer,
+  upsertMcpServer
+} from './mcp-config'
 import { emptyResourcesSnapshot } from './resources-service'
 import { listPackages, toPackageProgress } from './packages-service'
 import { buildTrustSnapshot, emptyTrustSnapshot } from './trust-service'
 import type { PackageManager, ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type {
+  McpConfigResult,
+  McpConfigView,
+  McpPatchRequest,
+  McpScopeNameRequest,
+  McpUpsertRequest,
   PackageInfo,
   PackageProgress,
   PackageResult,
@@ -54,6 +65,10 @@ type InboundMessage =
   | { type: 'packages_install'; requestId: string; source: string; local: boolean }
   | { type: 'packages_remove'; requestId: string; source: string; local: boolean }
   | { type: 'packages_update'; requestId: string; source?: string }
+  | { type: 'mcp_list'; requestId: string }
+  | { type: 'mcp_upsert'; requestId: string; request: McpUpsertRequest }
+  | { type: 'mcp_remove'; requestId: string; request: McpScopeNameRequest }
+  | { type: 'mcp_patch'; requestId: string; request: McpPatchRequest }
   | { type: 'resources_read'; requestId: string }
   | { type: 'trust_read'; requestId: string }
   | { type: 'tree_get'; requestId: string }
@@ -76,6 +91,8 @@ type OutboundMessage =
   | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
   | { type: 'packages_progress'; progress: PackageProgress }
   | { type: 'packages_result'; requestId: string; result: PackageResult }
+  | { type: 'mcp_config_result'; requestId: string; result: McpConfigResult }
+  | { type: 'mcp_open_url'; url: string }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -170,7 +187,9 @@ async function openSession(resumePath?: string): Promise<void> {
     cwd: workspace,
     bridge: approvalBridge,
     settingsManager,
-    resumePath
+    resumePath,
+    // MCP 的 OAuth 登录由扩展触发；这里把 URL 转给主进程用系统浏览器打开
+    openUrl: (url) => post({ type: 'mcp_open_url', url })
   })
   session.onEvent((event) => post({ type: 'event', event }))
 }
@@ -200,6 +219,19 @@ function packageResult(): PackageResult {
 
 function failedPackages(error: string): PackageResult {
   return { ok: false, error, packages: safePackageList() }
+}
+
+/** MCP 配置读写的共同上下文 */
+function mcpContext(): { cwd: string; agentDir: string; projectTrusted: boolean } {
+  return {
+    cwd: workspace,
+    agentDir,
+    projectTrusted: settingsManager ? settingsManager.isProjectTrusted() : false
+  }
+}
+
+function mcpConfigResult(error?: string): McpConfigResult {
+  return { ok: !error, error, config: readMcpConfig(mcpContext()) }
 }
 
 async function handle(message: InboundMessage): Promise<void> {
@@ -473,6 +505,40 @@ async function handle(message: InboundMessage): Promise<void> {
         result: failedPackages(`更新失败：${String(error)}`)
       })
     }
+    return
+  }
+
+  if (message.type === 'mcp_list') {
+    post({
+      type: 'mcp_config_result',
+      requestId: message.requestId,
+      result: mcpConfigResult()
+    })
+    return
+  }
+
+  if (message.type === 'mcp_upsert') {
+    const result = upsertMcpServer(message.request, mcpContext())
+    // 服务器增删改后需要重载才会真正连接，因此只回报结果，不在这里重建会话
+    post({ type: 'mcp_config_result', requestId: message.requestId, result })
+    return
+  }
+
+  if (message.type === 'mcp_remove') {
+    post({
+      type: 'mcp_config_result',
+      requestId: message.requestId,
+      result: removeMcpServer(message.request, mcpContext())
+    })
+    return
+  }
+
+  if (message.type === 'mcp_patch') {
+    post({
+      type: 'mcp_config_result',
+      requestId: message.requestId,
+      result: patchMcpServer(message.request, mcpContext())
+    })
     return
   }
 

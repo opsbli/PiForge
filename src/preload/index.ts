@@ -76,6 +76,14 @@ const api: PiForgeApi = {
       ipcRenderer.removeListener(IPC.PACKAGES_PROGRESS, listener)
     }
   },
+
+  readMcpConfig: () => ipcRenderer.invoke(IPC.MCP_LIST),
+
+  upsertMcpServer: (request) => ipcRenderer.invoke(IPC.MCP_UPSERT, request),
+
+  removeMcpServer: (request) => ipcRenderer.invoke(IPC.MCP_REMOVE, request),
+
+  patchMcpServer: (request) => ipcRenderer.invoke(IPC.MCP_PATCH, request),
   readResources: () => ipcRenderer.invoke(IPC.RESOURCES_READ),
   readTrust: () => ipcRenderer.invoke(IPC.TRUST_READ),
   getAppInfo: () => ipcRenderer.invoke(IPC.APP_INFO),

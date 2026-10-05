@@ -1,6 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import type { SettingsFieldSpec, SettingsPatchEntry, SettingsScopeName } from '../shared/ipc-types'
+import { detectIndent, readJsonFile, writeJsonFile } from './json-file'
 
 /**
  * 设置写入。
@@ -125,8 +124,7 @@ function coerce(spec: SettingsFieldSpec, value: unknown): { ok: true; value: unk
   }
 }
 
-function setPath(target: Record<string, unknown>, path: string[], value: unknown): void {
-  let cursor = target
+function setPath(target: Record<string, unknown>, path: string[], value: unknown): void {  let cursor = target
   for (let index = 0; index < path.length - 1; index += 1) {
     const key = path[index]
     const next = cursor[key]
@@ -157,13 +155,6 @@ function deletePath(target: Record<string, unknown>, path: string[]): void {
       delete parent[key]
     }
   }
-}
-
-/** 沿用原文件的缩进，避免整文件重排 */
-function detectIndent(text: string): string | number {
-  const match = text.match(/\n([ \t]+)"/)
-  if (!match) return 2
-  return match[1].includes('\t') ? '\t' : match[1].length
 }
 
 export interface SettingsWriteOutcome {
@@ -203,27 +194,17 @@ export function applySettingsWrite(input: {
     changes[entry.key] = coerced.value
   }
 
-  let text = ''
-  let existed = false
-  if (existsSync(input.filePath)) {
-    existed = true
-    text = readFileSync(input.filePath, 'utf8')
-    if (text.trim()) {
-      try {
-        JSON.parse(text)
-      } catch (error) {
-        return {
-          ok: false,
-          error: `现有配置文件无法解析，已拒绝写入以免破坏它：${String(error)}`,
-          changed: [],
-          changes: {}
-        }
-      }
+  const read = readJsonFile(input.filePath)
+  if (read.value === null) {
+    return {
+      ok: false,
+      error: `现有配置文件无法解析，已拒绝写入以免破坏它：${read.error ?? '未知错误'}`,
+      changed: [],
+      changes: {}
     }
   }
 
-  const current = text.trim() ? (JSON.parse(text) as Record<string, unknown>) : {}
-  const next: Record<string, unknown> = { ...current }
+  const next: Record<string, unknown> = { ...read.value }
 
   for (const [key, value] of Object.entries(changes)) {
     const path = key.split('.')
@@ -231,16 +212,14 @@ export function applySettingsWrite(input: {
     else setPath(next, path, value)
   }
 
-  const serialized = `${JSON.stringify(next, null, detectIndent(text))}\n`
-
-  try {
-    mkdirSync(dirname(input.filePath), { recursive: true })
-    if (existed) copyFileSync(input.filePath, `${input.filePath}.bak`)
-    const temporary = `${input.filePath}.tmp-${process.pid}`
-    writeFileSync(temporary, serialized, 'utf8')
-    renameSync(temporary, input.filePath)
-  } catch (error) {
-    return { ok: false, error: `写入失败：${String(error)}`, changed: [], changes: {} }
+  const written = writeJsonFile({
+    filePath: input.filePath,
+    value: next,
+    indent: detectIndent(read.text),
+    existed: read.exists
+  })
+  if (!written.ok) {
+    return { ok: false, error: written.error, changed: [], changes: {} }
   }
 
   return { ok: true, target: input.filePath, changed: Object.keys(changes), changes }

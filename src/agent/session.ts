@@ -1,7 +1,14 @@
-import type { AgentSession, ResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent'
+import type {
+  AgentSession,
+  InlineExtension,
+  LoadedMcpConfig,
+  ResourceLoader,
+  SettingsManager
+} from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type { ResourcesSnapshot, SessionSummary, SessionHistoryMessage, ToolInfoLite } from '../shared/ipc-types'
 import { buildResourcesSnapshot } from './resources-service'
+import { loadMcpForSdk, mcpExtensionNeeds, mcpPaths } from './mcp-config'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
 import { createMemoryExtension } from './memory'
 import { builtinTools } from './tools'
@@ -66,6 +73,8 @@ export interface CreateSessionOptions {
   settingsManager: SettingsManager
   /** 已有会话文件路径：传入则恢复该会话；不传则新建 */
   resumePath?: string
+  /** 打开外部 URL（MCP 的 OAuth 登录用）；由 agent 进程转发给主进程 */
+  openUrl?: (url: string) => void
 }
 
 /**
@@ -78,7 +87,7 @@ export interface CreateSessionOptions {
  * 需要临时会话时应传入 SessionManager.inMemory()。
  */
 export async function createSession(options: CreateSessionOptions): Promise<SessionHandle> {
-  const { cwd, bridge, settingsManager, resumePath } = options
+  const { cwd, bridge, settingsManager, resumePath, openUrl } = options
   const sdk = await import('@earendil-works/pi-coding-agent')
 
   // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
@@ -98,14 +107,47 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
   const agentDir = sdk.getAgentDir()
 
   // 注入危险操作审批扩展（内联，不走 ~/.pi/agent/extensions/）
+  const extensionFactories: InlineExtension[] = [
+    { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) },
+    { name: 'piforge-memory', factory: createMemoryExtension(cwd) }
+  ]
+
+  // MCP：SDK 会话**不会**自动加载内置扩展（SDK 文档原文），必须显式注入。
+  // codemode / tool-search 只在确实有对应 exposure 的服务器时才挂，
+  // 否则会改变没有 MCP 时的工具面。
+  const mcpConfig = loadMcpForSdk({ cwd, agentDir, projectTrusted: settingsManager.isProjectTrusted() })
+  extensionFactories.push({
+    name: 'piforge-mcp',
+    factory: sdk.createMcpExtension({
+      // 自实现的加载器按官方文档格式构造条目并逐条校验过，形状与 McpServerConfig 一致；
+      // SDK 未导出 validateMcpServerConfig，无法借它做编译期窄化，故在此断言。
+      loadConfig: () =>
+        loadMcpForSdk({
+          cwd,
+          agentDir,
+          projectTrusted: settingsManager.isProjectTrusted()
+        }) as unknown as LoadedMcpConfig,
+      ...(openUrl ? { openUrl } : {}),
+      logPath: mcpPaths(cwd, agentDir).logPath
+    })
+  })
+
+  const needs = mcpExtensionNeeds(mcpConfig)
+  if (needs.codemode) {
+    extensionFactories.push({ name: 'piforge-codemode', factory: sdk.createCodemodeExtension() })
+  }
+  if (needs.toolSearch) {
+    extensionFactories.push({
+      name: 'piforge-tool-search',
+      factory: sdk.createToolSearchExtension()
+    })
+  }
+
   const resourceLoader = new sdk.DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
-    extensionFactories: [
-      { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) },
-      { name: 'piforge-memory', factory: createMemoryExtension(cwd) }
-    ]
+    extensionFactories
   })
   await resourceLoader.reload()
 

@@ -23,6 +23,10 @@ export const IPC = {
   PACKAGES_REMOVE: 'packages:remove',
   PACKAGES_UPDATE: 'packages:update',
   PACKAGES_PROGRESS: 'packages:progress',
+  MCP_LIST: 'mcp:list',
+  MCP_UPSERT: 'mcp:upsert',
+  MCP_REMOVE: 'mcp:remove',
+  MCP_PATCH: 'mcp:patch',
   RESOURCES_READ: 'resources:read',
   TRUST_READ: 'trust:read',
   APP_INFO: 'app:info',
@@ -276,6 +280,92 @@ export interface PackageResult {
   ok: boolean
   error?: string
   packages: PackageInfo[]
+}
+
+/* ---------------- MCP ---------------- */
+
+export type McpTransportKind = 'stdio' | 'http'
+export type McpExposureName = 'codemode' | 'deferred' | 'direct' | 'hidden'
+
+export interface McpScopeNameRequest {
+  scope: SettingsScopeName
+  name: string
+}
+
+/**
+ * MCP 服务器的可展示信息。
+ *
+ * 刻意**不包含 `env` / `headers` 的值**：它们常携带凭据，不回传到渲染进程，
+ * 只回显键名。要修改变量值需要重新输入（写侧接受值，读侧不回显）。
+ */
+export interface McpServerView {
+  name: string
+  transport: McpTransportKind
+  command: string | null
+  args: string[]
+  envKeys: string[]
+  cwd: string | null
+  url: string | null
+  headerKeys: string[]
+  timeout: number | null
+  enabled: boolean
+  exposure: McpExposureName
+  description: string | null
+  /** 定义该条目的文件：用户级或项目级 */
+  source: SettingsScopeName
+  sourcePath: string
+  /** 项目级条目仅为「覆盖用户级服务器开关」形式时，指向被覆盖的服务器名 */
+  overrideOf: string | null
+  /** 配置校验失败时的原因（该条目会被 SDK 跳过） */
+  error: string | null
+}
+
+export interface McpConfigView {
+  servers: McpServerView[]
+  autoEnableCodemode: boolean | null
+  /** 读取 / 校验过程中发现的问题 */
+  errors: string[]
+  globalPath: string
+  projectPath: string
+  projectTrusted: boolean
+  /** OAuth 令牌文件；与 CLI 共享，登录一次两边都能用 */
+  authPath: string
+  logPath: string
+}
+
+export interface McpServerInput {
+  transport: McpTransportKind
+  command?: string
+  args?: string[]
+  /** 提供时**整体替换** env；不提供则保持不变（避免误清空凭据） */
+  env?: Record<string, string>
+  cwd?: string
+  url?: string
+  headers?: Record<string, string>
+  timeout?: number
+  exposure?: McpExposureName
+  description?: string
+  enabled?: boolean
+}
+
+export interface McpUpsertRequest {
+  scope: SettingsScopeName
+  name: string
+  config: McpServerInput
+}
+
+export interface McpPatchRequest {
+  scope: SettingsScopeName
+  name: string
+  enabled?: boolean
+  exposure?: McpExposureName
+  autoEnableCodemode?: boolean
+}
+
+export interface McpConfigResult {
+  ok: boolean
+  error?: string
+  config: McpConfigView | null
 }
 
 /** 应用与运行时版本（关于页） */
@@ -566,6 +656,13 @@ export interface PiForgeApi {
   /** 更新一个或全部 Pi packages */
   updatePackages(request: { source?: string }): Promise<PackageResult>
   onPackagesProgress(cb: (progress: PackageProgress) => void): () => void
+  readMcpConfig(): Promise<McpConfigResult | null>
+  /** 新增或整体替换一个 MCP 服务器（需先取得用户确认） */
+  upsertMcpServer(request: McpUpsertRequest): Promise<McpConfigResult>
+  /** 删除一个 MCP 服务器（需先取得用户确认） */
+  removeMcpServer(request: McpScopeNameRequest): Promise<McpConfigResult>
+  /** 只改 enabled / exposure / autoEnableCodemode */
+  patchMcpServer(request: McpPatchRequest): Promise<McpConfigResult>
   readResources(): Promise<ResourcesSnapshot | null>
   readTrust(): Promise<TrustSnapshot | null>
   /** 应用与运行时的版本信息（关于页） */

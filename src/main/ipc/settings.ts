@@ -3,6 +3,9 @@ import { IPC } from '../../shared/ipc-types'
 import type {
   AppInfo,
   CredentialStatus,
+  McpPatchRequest,
+  McpScopeNameRequest,
+  McpUpsertRequest,
   PackageActionRequest,
   SettingsWriteRequest
 } from '../../shared/ipc-types'
@@ -75,6 +78,34 @@ export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.PACKAGES_UPDATE, async (_event, request: unknown) => {
     const { source } = (request ?? {}) as { source?: string }
     return agentHost.updatePackages(typeof source === 'string' ? { source } : {})
+  })
+
+  ipcMain.handle(IPC.MCP_LIST, async () => {
+    return agentHost.readMcpConfig()
+  })
+
+  ipcMain.handle(IPC.MCP_UPSERT, async (_event, request: unknown) => {
+    const parsed = (request ?? {}) as McpUpsertRequest
+    if (parsed.scope !== 'global' && parsed.scope !== 'project') {
+      return { ok: false, error: '缺少合法的写入 scope', config: null }
+    }
+    return agentHost.upsertMcpServer(parsed)
+  })
+
+  ipcMain.handle(IPC.MCP_REMOVE, async (_event, request: unknown) => {
+    const parsed = (request ?? {}) as McpScopeNameRequest
+    if (!parsed.name || (parsed.scope !== 'global' && parsed.scope !== 'project')) {
+      return { ok: false, error: '缺少服务器名或 scope', config: null }
+    }
+    return agentHost.removeMcpServer(parsed)
+  })
+
+  ipcMain.handle(IPC.MCP_PATCH, async (_event, request: unknown) => {
+    const parsed = (request ?? {}) as McpPatchRequest
+    if (!parsed.name || (parsed.scope !== 'global' && parsed.scope !== 'project')) {
+      return { ok: false, error: '缺少服务器名或 scope', config: null }
+    }
+    return agentHost.patchMcpServer(parsed)
   })
 
   ipcMain.handle(IPC.APP_INFO, async (): Promise<AppInfo> => {

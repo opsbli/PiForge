@@ -1,4 +1,4 @@
-import { utilityProcess, type UtilityProcess, BrowserWindow } from 'electron'
+import { utilityProcess, type UtilityProcess, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
 import type {
@@ -12,6 +12,10 @@ import type {
   PackageActionRequest,
   PackageProgress,
   PackageResult,
+  McpConfigResult,
+  McpPatchRequest,
+  McpScopeNameRequest,
+  McpUpsertRequest,
   ResourcesSnapshot,
   TrustSnapshot,
   ApprovalRequest,
@@ -33,6 +37,8 @@ type AgentOutbound =
   | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
   | { type: 'packages_progress'; progress: PackageProgress }
   | { type: 'packages_result'; requestId: string; result: PackageResult }
+  | { type: 'mcp_config_result'; requestId: string; result: McpConfigResult }
+  | { type: 'mcp_open_url'; url: string }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -56,6 +62,7 @@ export class AgentHost {
   private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
   private reloadWaiters = new Map<string, (result: SettingsReloadResult) => void>()
   private packageWaiters = new Map<string, (result: PackageResult) => void>()
+  private mcpWaiters = new Map<string, (result: McpConfigResult) => void>()
   private resourcesWaiters = new Map<string, (snapshot: ResourcesSnapshot) => void>()
   private trustWaiters = new Map<string, (snapshot: TrustSnapshot) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
@@ -190,6 +197,22 @@ export class AgentHost {
       { type: 'packages_update', source: request.source },
       this.packageWaiters
     )
+  }
+
+  readMcpConfig(): Promise<McpConfigResult | null> {
+    return this.request({ type: 'mcp_list' }, this.mcpWaiters)
+  }
+
+  upsertMcpServer(request: McpUpsertRequest): Promise<McpConfigResult | null> {
+    return this.request({ type: 'mcp_upsert', request }, this.mcpWaiters)
+  }
+
+  removeMcpServer(request: McpScopeNameRequest): Promise<McpConfigResult | null> {
+    return this.request({ type: 'mcp_remove', request }, this.mcpWaiters)
+  }
+
+  patchMcpServer(request: McpPatchRequest): Promise<McpConfigResult | null> {
+    return this.request({ type: 'mcp_patch', request }, this.mcpWaiters)
   }
 
   /** 读取已加载资源快照（扩展 / skill / 上下文文件） */
@@ -402,6 +425,21 @@ export class AgentHost {
         // 安装 / 更新可能耗时较久，进度直接广播给所有窗口
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send(IPC.PACKAGES_PROGRESS, message.progress)
+        }
+        break
+      }
+      case 'mcp_config_result': {
+        const waiter = this.mcpWaiters.get(message.requestId)
+        if (waiter) {
+          this.mcpWaiters.delete(message.requestId)
+          waiter(message.result)
+        }
+        break
+      }
+      case 'mcp_open_url': {
+        // MCP 的 OAuth 登录在 agent 进程里发起，由主进程用系统浏览器打开
+        if (message.url.startsWith('https://') || message.url.startsWith('http://')) {
+          void shell.openExternal(message.url)
         }
         break
       }
