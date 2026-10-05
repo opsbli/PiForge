@@ -35,6 +35,10 @@ export const IPC = {
   MEMORY_INDEX: 'memory:index',
   MEMORY_REBUILD: 'memory:rebuild',
 
+  // 会话树
+  TREE_GET: 'tree:get',
+  TREE_NAVIGATE: 'tree:navigate',
+
   // 会话管理
   SESSION_LIST: 'session:list',
   SESSION_NEW: 'session:new',
@@ -117,6 +121,18 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+/** 会话树节点（精简） */
+export interface TreeEntry {
+  id: string
+  parentId: string | null
+  type: string
+  role?: string
+  preview: string
+  label?: string
+  timestamp: string
+  children: TreeEntry[]
+}
+
 /** 记忆条目 */
 export interface MemoryEntry {
   name: string
@@ -164,6 +180,13 @@ export interface PiForgeApi {
   killTerminal(terminalId: string): Promise<void>
   onTerminalData(cb: (event: TerminalDataEvent) => void): () => void
   onTerminalExit(cb: (event: TerminalExitEvent) => void): () => void
+
+  // 会话树
+  getTree(): Promise<{ tree: TreeEntry[]; leafId: string | null }>
+  navigateTree(
+    targetId: string,
+    options: { summarize?: boolean; customInstructions?: string; label?: string }
+  ): Promise<{ tree: TreeEntry[]; leafId: string | null }>
 
   // 记忆管理
   listMemories(): Promise<MemoryEntry[]>

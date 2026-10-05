@@ -5,6 +5,19 @@ import { createApprovalExtension, type ApprovalBridge } from './approval'
 import { createMemoryExtension } from './memory'
 import { builtinTools } from './tools'
 
+export interface TreeEntry {
+  id: string
+  parentId: string | null
+  type: string
+  /** message 类型时的角色（user / assistant / tool） */
+  role?: string
+  /** 内容预览 */
+  preview: string
+  label?: string
+  timestamp: string
+  children: TreeEntry[]
+}
+
 export interface SessionHandle {
   /** 发送一条用户 prompt */
   send(text: string): Promise<void>
@@ -14,6 +27,15 @@ export interface SessionHandle {
   summary(): SessionSummary
   /** 会话文件路径（持久化模式） */
   sessionFile(): string | undefined
+  /** 读取会话树（简化结构） */
+  getTree(): TreeEntry[]
+  /** 当前 leaf 节点 id */
+  getLeafId(): string | null
+  /** 导航到指定节点 */
+  navigate(
+    targetId: string,
+    options: { summarize?: boolean; customInstructions?: string; label?: string }
+  ): Promise<{ cancelled: boolean; editorText?: string }>
   /** 清理资源 */
   dispose(): void
 }
@@ -143,6 +165,21 @@ function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
       return session.getSessionStats().sessionFile
     },
 
+    getTree(): TreeEntry[] {
+      const manager = session.sessionManager
+      const roots = manager.getTree()
+      return roots.map((node) => toTreeEntry(node))
+    },
+
+    getLeafId(): string | null {
+      return session.sessionManager.getLeafId()
+    },
+
+    async navigate(targetId, options) {
+      const result = await session.navigateTree(targetId, options)
+      return { cancelled: result.cancelled, editorText: result.editorText }
+    },
+
     dispose(): void {
       session.dispose()
     }
@@ -151,3 +188,49 @@ function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
 
 // 放在 session 层，避免 index.ts 直接依赖 events 的细节
 import { mapSdkEvent as mapEvent } from './events'
+
+/** 把 SDK 的 SessionTreeNode 递归转成精简结构（给 UI） */
+function toTreeEntry(node: {
+  entry: { type: string; id: string; parentId: string | null; timestamp: string; message?: unknown; summary?: string }
+  children: unknown[]
+  label?: string
+}): TreeEntry {
+  const e = node.entry
+  let role: string | undefined
+  let preview = ''
+  if (e.type === 'message' && e.message) {
+    const msg = e.message as { role?: string; content?: unknown }
+    role = msg.role
+    preview = previewOf(msg.content)
+  } else if (e.type === 'compaction') {
+    preview = `[压缩摘要] ${(e.summary ?? '').slice(0, 80)}`
+  } else {
+    preview = `[${e.type}]`
+  }
+  return {
+    id: e.id,
+    parentId: e.parentId,
+    type: e.type,
+    role,
+    preview,
+    label: node.label,
+    timestamp: e.timestamp,
+    children: (node.children as Parameters<typeof toTreeEntry>[0][]).map((c) => toTreeEntry(c))
+  }
+}
+
+function previewOf(content: unknown): string {
+  if (typeof content === 'string') return content.slice(0, 80)
+  if (Array.isArray(content)) {
+    const texts = content
+      .filter((c) => c && typeof c === 'object' && (c as { type?: string }).type === 'text')
+      .map((c) => String((c as { text?: string }).text ?? ''))
+    const toolCalls = content.filter(
+      (c) => c && typeof c === 'object' && (c as { type?: string }).type === 'toolCall'
+    )
+    const joined = texts.join(' ').trim()
+    if (joined) return joined.slice(0, 80)
+    if (toolCalls.length > 0) return `[工具调用 x${toolCalls.length}]`
+  }
+  return '(空)'
+}

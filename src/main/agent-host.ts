@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
-import type { SessionSummary, SessionListItem, ApprovalRequest } from '../shared/ipc-types'
+import type { SessionSummary, SessionListItem, ApprovalRequest, TreeEntry } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 import { resolveApiKey } from './credentials'
 
@@ -11,6 +11,7 @@ type AgentOutbound =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
 /**
@@ -25,6 +26,7 @@ export class AgentHost {
   private requestSeq = 0
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
+  private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
 
@@ -90,6 +92,35 @@ export class AgentHost {
     })
   }
 
+  /** 读取会话树 */
+  getTree(): Promise<{ tree: TreeEntry[]; leafId: string | null }> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve({ tree: [], leafId: null })
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      this.treeWaiters.set(requestId, resolve)
+      this.child.postMessage({ type: 'tree_get', requestId })
+    })
+  }
+
+  /** 导航到会话树节点 */
+  navigateTree(
+    targetId: string,
+    options: { summarize?: boolean; customInstructions?: string; label?: string }
+  ): Promise<{ tree: TreeEntry[]; leafId: string | null }> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve({ tree: [], leafId: null })
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      this.treeWaiters.set(requestId, resolve)
+      this.child.postMessage({ type: 'tree_navigate', targetId, options })
+    })
+  }
+
   /** 新建会话 */
   newSession(): void {
     this.child?.postMessage({ type: 'session_new' })
@@ -146,6 +177,16 @@ export class AgentHost {
         this.approvalByCallId.set(message.request.callId, message.requestId)
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send(IPC.APPROVAL_REQUEST, message.request)
+        }
+        break
+      }
+      case 'tree_result': {
+        // navigate 的 requestId 固定为 'navigate'，广播给所有等待者
+        const waiters = [...this.treeWaiters.values()]
+        this.treeWaiters.clear()
+        for (const w of waiters) w({ tree: message.tree, leafId: message.leafId })
+        if (waiters.length === 0) {
+          this.broadcast({ type: 'turn_end' })
         }
         break
       }

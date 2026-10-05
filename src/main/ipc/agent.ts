@@ -44,6 +44,21 @@ export function registerAgentIpc(): void {
     return agentHost.listSessions()
   })
 
+  ipcMain.handle(IPC.TREE_GET, async () => {
+    return agentHost.getTree()
+  })
+
+  ipcMain.handle(
+    IPC.TREE_NAVIGATE,
+    async (
+      _event,
+      payload: { targetId?: string; options?: { summarize?: boolean; customInstructions?: string; label?: string } }
+    ) => {
+      if (!payload?.targetId) return { tree: [], leafId: null }
+      return agentHost.navigateTree(payload.targetId, payload.options ?? {})
+    }
+  )
+
   ipcMain.handle(IPC.SESSION_NEW, async (): Promise<void> => {
     agentHost.newSession()
   })

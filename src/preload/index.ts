@@ -87,6 +87,11 @@ const api: PiForgeApi = {
     }
   },
 
+  // ---- 会话树 ----
+  getTree: () => ipcRenderer.invoke(IPC.TREE_GET),
+  navigateTree: (targetId: string, options) =>
+    ipcRenderer.invoke(IPC.TREE_NAVIGATE, { targetId, options }),
+
   // ---- 记忆管理 ----
   listMemories: () => ipcRenderer.invoke(IPC.MEMORY_LIST),
   readMemory: (name: string) => ipcRenderer.invoke(IPC.MEMORY_READ, name),

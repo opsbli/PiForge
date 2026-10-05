@@ -1,4 +1,4 @@
-import { createSession, listSessions, type SessionHandle } from './session'
+import { createSession, listSessions, type SessionHandle, type TreeEntry } from './session'
 import type { ApprovalRequest } from './approval'
 import type { AgentEvent } from '../shared/agent-events'
 import type { SessionSummary, SessionListItem } from '../shared/ipc-types'
@@ -17,6 +17,12 @@ type InboundMessage =
   | { type: 'session_list'; requestId: string }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
+  | { type: 'tree_get'; requestId: string }
+  | {
+      type: 'tree_navigate'
+      targetId: string
+      options: { summarize?: boolean; customInstructions?: string; label?: string }
+    }
   | { type: 'dispose' }
 
 type OutboundMessage =
@@ -25,6 +31,7 @@ type OutboundMessage =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
 const port = process.parentPort
@@ -116,6 +123,43 @@ async function handle(message: InboundMessage): Promise<void> {
       await openSession(message.sessionPath)
     } catch (err) {
       post({ type: 'error', message: `切换会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'tree_get') {
+    if (!session) {
+      post({ type: 'error', message: '会话未就绪' })
+      return
+    }
+    post({
+      type: 'tree_result',
+      requestId: message.requestId,
+      tree: session.getTree(),
+      leafId: session.getLeafId()
+    })
+    return
+  }
+
+  if (message.type === 'tree_navigate') {
+    if (!session) {
+      post({ type: 'error', message: '会话未就绪' })
+      return
+    }
+    try {
+      const result = await session.navigate(message.targetId, message.options ?? {})
+      if (result.cancelled) {
+        post({ type: 'error', message: '导航被取消' })
+      } else {
+        post({
+          type: 'tree_result',
+          requestId: 'navigate',
+          tree: session.getTree(),
+          leafId: session.getLeafId()
+        })
+      }
+    } catch (err) {
+      post({ type: 'error', message: `导航失败：${String(err)}` })
     }
     return
   }
