@@ -365,6 +365,16 @@ export class AgentHost {
     this.child?.postMessage({ type: 'session_switch', sessionPath })
   }
 
+  /** 重命名会话 */
+  renameSession(path: string, name: string): void {
+    this.child?.postMessage({ type: 'session_rename', path, name })
+  }
+
+  /** 删除会话文件（删除当前会话时由 agent 侧切到新会话） */
+  deleteSession(path: string): void {
+    this.child?.postMessage({ type: 'session_delete', path })
+  }
+
   /** 回传审批结果（renderer → 主进程 → agent） */
   respondApproval(callId: string, approved: boolean): void {
     const requestId = this.approvalByCallId.get(callId)

@@ -91,6 +91,8 @@ export const IPC = {
   SESSION_NEW: 'session:new',
   SESSION_SWITCH: 'session:switch',
   SESSION_MESSAGES: 'session:messages',
+  SESSION_RENAME: 'session:rename',
+  SESSION_DELETE: 'session:delete',
 
   // 会话控制（输入框工具栏）
   SESSION_META: 'session:meta',
@@ -828,6 +830,10 @@ export interface PiForgeApi {
   listAllSessions(): Promise<SessionListItem[]>
   newSession(): Promise<void>
   switchSession(sessionPath: string): Promise<void>
+  /** 重命名会话（写入 session_info 条目） */
+  renameSession(path: string, name: string): Promise<void>
+  /** 删除会话文件（删除当前会话时自动切到新会话） */
+  deleteSession(path: string): Promise<void>
   /** 读取当前会话活动分支的历史消息 */
   getSessionMessages(): Promise<SessionHistoryMessage[]>
   /** 等待 agent 进程就绪（重启工作区后使用） */

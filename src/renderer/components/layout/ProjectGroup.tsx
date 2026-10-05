@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import {
+  Archive,
+  ArchiveRestore,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -8,7 +10,10 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
+  Quote,
   Search,
   Trash2
 } from 'lucide-react'
@@ -16,8 +21,11 @@ import type { ProjectRecord, SessionListItem } from '@shared/ipc-types'
 import { Button } from '@renderer/components/ui/button'
 import { CollapsibleSection } from '@renderer/components/ui/collapsible'
 import { Input } from '@renderer/components/ui/input'
+import { sessionLabel, SESSION_DRAG_MIME, type SessionDragPayload } from '@renderer/lib/composer-references'
 import { useCostStore } from '@renderer/stores/cost-store'
+import { useComposerStore } from '@renderer/stores/composer-store'
 import { normalizePath, useProjectsStore } from '@renderer/stores/projects-store'
+import { useSessionFlagsStore } from '@renderer/stores/session-flags-store'
 import { formatRelativeTime } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
 
@@ -39,6 +47,13 @@ export function ProjectGroup(): JSX.Element {
   const renameProject = useProjectsStore((s) => s.rename)
   const removeProject = useProjectsStore((s) => s.remove)
   const activateProject = useProjectsStore((s) => s.activate)
+  const renameSession = useProjectsStore((s) => s.renameSession)
+  const deleteSession = useProjectsStore((s) => s.deleteSession)
+
+  const pinnedIds = useSessionFlagsStore((s) => s.pinned)
+  const archivedIds = useSessionFlagsStore((s) => s.archived)
+  const togglePinned = useSessionFlagsStore((s) => s.togglePinned)
+  const setArchived = useSessionFlagsStore((s) => s.setArchived)
 
   const newSession = useCostStore((s) => s.newSession)
   const switchSession = useCostStore((s) => s.switchSession)
@@ -47,6 +62,7 @@ export function ProjectGroup(): JSX.Element {
   const [filter, setFilter] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [archivedOpen, setArchivedOpen] = useState<Set<string>>(new Set())
   const [menuId, setMenuId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -121,6 +137,37 @@ export function ProjectGroup(): JSX.Element {
         : '项目文件位于本地磁盘，删除只会移除这里的登记，不会删除任何文件。'
     if (!window.confirm(`确定删除项目「${project.name}」？\n\n${hint}`)) return
     await removeProject(project.id)
+  }
+
+  const handleQuoteSession = (session: SessionListItem): void => {
+    useComposerStore.getState().addReferences([
+      {
+        id: `&${session.id}`,
+        kind: '&',
+        label: sessionLabel(session),
+        value: session.id,
+        title: `引用会话：${sessionLabel(session)}`
+      }
+    ])
+  }
+
+  const handleDeleteSession = async (session: SessionListItem): Promise<void> => {
+    if (
+      !window.confirm(
+        `确定删除会话「${sessionLabel(session)}」？\n\n该操作不可撤销，会话文件将被删除。`
+      )
+    )
+      return
+    await deleteSession(session.id, session.path)
+  }
+
+  const toggleArchivedOpen = (projectId: string): void => {
+    setArchivedOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(projectId)) next.delete(projectId)
+      else next.add(projectId)
+      return next
+    })
   }
 
   return (
@@ -298,22 +345,80 @@ export function ProjectGroup(): JSX.Element {
                       {sessions.length === 0 ? (
                         <p className="px-2 py-1 text-[11px] text-muted-foreground">暂无历史会话</p>
                       ) : (
-                        sessions.map((session) => (
-                          <SessionRow
-                            key={session.id}
-                            session={session}
-                            active={isActive && session.id === activeSessionId}
-                            onSelect={() => {
-                              if (isActive) {
-                                void switchSession(session.path)
-                              } else {
-                                void activateProject(project.id).then(() =>
-                                  switchSession(session.path)
-                                )
-                              }
-                            }}
-                          />
-                        ))
+                        <>
+                          {sortSessions(
+                            sessions.filter((session) => !archivedIds.includes(session.id)),
+                            pinnedIds
+                          ).map((session) => (
+                            <SessionRow
+                              key={session.id}
+                              session={session}
+                              active={isActive && session.id === activeSessionId}
+                              pinned={pinnedIds.includes(session.id)}
+                              archived={false}
+                              onSelect={() => {
+                                if (isActive) {
+                                  void switchSession(session.path)
+                                } else {
+                                  void activateProject(project.id).then(() =>
+                                    switchSession(session.path)
+                                  )
+                                }
+                              }}
+                              onTogglePin={() => togglePinned(session.id)}
+                              onToggleArchive={() => setArchived(session.id, true)}
+                              onQuote={() => handleQuoteSession(session)}
+                              onRename={(name) => void renameSession(session.path, name)}
+                              onDelete={() => void handleDeleteSession(session)}
+                            />
+                          ))}
+
+                          {(() => {
+                            const archivedSessions = sessions.filter((session) =>
+                              archivedIds.includes(session.id)
+                            )
+                            if (archivedSessions.length === 0) return null
+                            const open = archivedOpen.has(project.id)
+                            return (
+                              <div className="mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleArchivedOpen(project.id)}
+                                  className="flex h-6 w-full items-center gap-1 rounded px-1 text-[11px] text-muted-foreground hover:text-foreground"
+                                >
+                                  <ChevronRight
+                                    className={cn('size-3 transition-transform', open && 'rotate-90')}
+                                  />
+                                  已归档（{archivedSessions.length}）
+                                </button>
+                                {open &&
+                                  archivedSessions.map((session) => (
+                                    <SessionRow
+                                      key={session.id}
+                                      session={session}
+                                      active={isActive && session.id === activeSessionId}
+                                      pinned={pinnedIds.includes(session.id)}
+                                      archived
+                                      onSelect={() => {
+                                        if (isActive) {
+                                          void switchSession(session.path)
+                                        } else {
+                                          void activateProject(project.id).then(() =>
+                                            switchSession(session.path)
+                                          )
+                                        }
+                                      }}
+                                      onTogglePin={() => togglePinned(session.id)}
+                                      onToggleArchive={() => setArchived(session.id, false)}
+                                      onQuote={() => handleQuoteSession(session)}
+                                      onRename={(name) => void renameSession(session.path, name)}
+                                      onDelete={() => void handleDeleteSession(session)}
+                                    />
+                                  ))}
+                              </div>
+                            )
+                          })()}
+                        </>
                       )}
                     </div>
                   )}
@@ -382,36 +487,244 @@ function ProjectMenu({
   )
 }
 
+/** 会话列表排序：置顶在前，其余按修改时间倒序 */
+function sortSessions(sessions: SessionListItem[], pinnedIds: string[]): SessionListItem[] {
+  const pinnedSet = new Set(pinnedIds)
+  return [...sessions].sort((a, b) => {
+    const pa = pinnedSet.has(a.id) ? 1 : 0
+    const pb = pinnedSet.has(b.id) ? 1 : 0
+    if (pa !== pb) return pb - pa
+    return Date.parse(b.modified) - Date.parse(a.modified)
+  })
+}
+
 function SessionRow({
   session,
   active,
-  onSelect
+  pinned,
+  archived,
+  onSelect,
+  onTogglePin,
+  onToggleArchive,
+  onQuote,
+  onRename,
+  onDelete
 }: {
   session: SessionListItem
   active: boolean
+  pinned: boolean
+  archived: boolean
   onSelect: () => void
+  onTogglePin: () => void
+  onToggleArchive: () => void
+  onQuote: () => void
+  onRename: (name: string) => void
+  onDelete: () => void
 }): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const committedRef = useRef(false)
+
   const title = session.name?.trim() || session.firstMessage?.trim() || session.id.slice(0, 12)
 
+  const startRename = (): void => {
+    setMenuOpen(false)
+    committedRef.current = false
+    setRenaming(true)
+    setRenameValue(session.name ?? '')
+  }
+
+  const commitRename = (): void => {
+    // 防止 Enter 提交与输入框卸载时的 blur 重复提交
+    if (committedRef.current) return
+    committedRef.current = true
+    const name = renameValue.trim()
+    setRenaming(false)
+    if (name && name !== (session.name ?? '')) onRename(name)
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      title={title}
+    <div
       className={cn(
-        'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors',
-        active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'hover:bg-sidebar-accent/60'
+        'group/session relative flex items-center rounded-md transition-colors',
+        active ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent/60'
       )}
     >
-      <span className="flex items-center gap-1 truncate text-xs">
-        {active && <Check className="size-3 shrink-0 text-primary" />}
-        <span className="truncate">{title}</span>
-      </span>
-      <span className="truncate text-[10px] text-muted-foreground">
-        {session.messageCount} 条 · {formatRelativeTime(session.modified)}
-      </span>
-    </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        draggable={!renaming}
+        onDragStart={(event) => {
+          const payload: SessionDragPayload = {
+            id: session.id,
+            label: sessionLabel(session),
+            path: session.path
+          }
+          event.dataTransfer.effectAllowed = 'copy'
+          event.dataTransfer.setData(SESSION_DRAG_MIME, JSON.stringify(payload))
+        }}
+        title={title}
+        className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left"
+      >
+        {renaming ? (
+          <Input
+            autoFocus
+            value={renameValue}
+            className="h-5 min-w-0 flex-1 px-1 text-xs"
+            onChange={(event) => setRenameValue(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') commitRename()
+              if (event.key === 'Escape') setRenaming(false)
+            }}
+            onBlur={commitRename}
+          />
+        ) : (
+          <>
+            <span className="flex items-center gap-1 truncate text-xs">
+              {active && <Check className="size-3 shrink-0 text-primary" />}
+              {pinned && <Pin className="size-3 shrink-0 text-primary" />}
+              <span className="truncate">{title}</span>
+            </span>
+            <span className="truncate text-[10px] text-muted-foreground">
+              {session.messageCount} 条 · {formatRelativeTime(session.modified)}
+            </span>
+          </>
+        )}
+      </button>
+
+      {!renaming && (
+        <div className="mr-1 flex shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              'size-5 opacity-0 group-hover/session:opacity-100',
+              archived && 'opacity-100'
+            )}
+            aria-label={archived ? '取消归档' : '归档会话'}
+            title={archived ? '取消归档' : '归档会话'}
+            onClick={onToggleArchive}
+          >
+            {archived ? <ArchiveRestore /> : <Archive />}
+          </Button>
+
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(
+                'size-5 opacity-0 group-hover/session:opacity-100',
+                menuOpen && 'opacity-100'
+              )}
+              aria-label="会话操作"
+              title="会话操作"
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              <MoreHorizontal />
+            </Button>
+            {menuOpen && (
+              <SessionMenu
+                pinned={pinned}
+                onTogglePin={() => {
+                  setMenuOpen(false)
+                  onTogglePin()
+                }}
+                onQuote={() => {
+                  setMenuOpen(false)
+                  onQuote()
+                }}
+                onRename={startRename}
+                onDelete={() => {
+                  setMenuOpen(false)
+                  onDelete()
+                }}
+                onClose={() => setMenuOpen(false)}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 会话行的「…」菜单：置顶 / 引用会话 / 重命名 / 删除会话 */
+function SessionMenu({
+  pinned,
+  onTogglePin,
+  onQuote,
+  onRename,
+  onDelete,
+  onClose
+}: {
+  pinned: boolean
+  onTogglePin: () => void
+  onQuote: () => void
+  onRename: () => void
+  onDelete: () => void
+  onClose: () => void
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose()
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-md border border-border bg-popover py-1 text-xs shadow-md"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onTogglePin}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-accent"
+      >
+        {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+        {pinned ? '取消置顶' : '置顶'}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onQuote}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-accent"
+      >
+        <Quote className="size-3.5" />
+        引用会话
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onRename}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-accent"
+      >
+        <Pencil className="size-3.5" />
+        重命名
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onDelete}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-destructive hover:bg-destructive/10"
+      >
+        <Trash2 className="size-3.5" />
+        删除会话
+      </button>
+    </div>
   )
 }

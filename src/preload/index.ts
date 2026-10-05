@@ -31,6 +31,10 @@ const api: PiForgeApi = {
   newSession: (): Promise<void> => ipcRenderer.invoke(IPC.SESSION_NEW),
   switchSession: (sessionPath: string): Promise<void> =>
     ipcRenderer.invoke(IPC.SESSION_SWITCH, sessionPath),
+  renameSession: (path: string, name: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_RENAME, { path, name }),
+  deleteSession: (path: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_DELETE, { path }),
 
   getSessionMessages: () => ipcRenderer.invoke(IPC.SESSION_MESSAGES),
 

@@ -1,4 +1,5 @@
-import { createSession, listAllSessions, listSessions, type SessionHandle, type TreeEntry } from './session'
+import { createSession, listAllSessions, listSessions, renameSession, type SessionHandle, type TreeEntry } from './session'
+import { unlink } from 'node:fs/promises'
 import type { ApprovalRequest } from './approval'
 import {
   buildSettingsSnapshot,
@@ -62,6 +63,8 @@ type InboundMessage =
   | { type: 'approval_mode'; mode: ApprovalMode }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
+  | { type: 'session_rename'; path: string; name: string }
+  | { type: 'session_delete'; path: string }
   | { type: 'session_messages'; requestId: string }
   | { type: 'settings_read'; requestId: string }
   | {
@@ -487,6 +490,33 @@ async function handle(message: InboundMessage): Promise<void> {
       await openSession(message.sessionPath)
     } catch (err) {
       post({ type: 'error', message: `切换会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_rename') {
+    try {
+      await renameSession(message.path, message.name)
+    } catch (err) {
+      post({ type: 'error', message: `重命名会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_delete') {
+    try {
+      // 删除的是当前会话时，先切到新会话，避免 agent 继续持有已删除的文件
+      if (session?.sessionFile() === message.path) {
+        await openSession()
+      }
+      try {
+        await unlink(message.path)
+      } catch (err) {
+        // 文件已不存在视为删除成功
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      }
+    } catch (err) {
+      post({ type: 'error', message: `删除会话失败：${String(err)}` })
     }
     return
   }

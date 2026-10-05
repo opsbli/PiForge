@@ -38,6 +38,16 @@ export interface ComposerReference {
   title?: string
 }
 
+/** 会话拖拽到输入框时的 MIME 类型（自定义，避免与文本/文件拖拽混淆） */
+export const SESSION_DRAG_MIME = 'application/x-piforge-session'
+
+/** 会话拖拽载荷：跨项目引用只靠 id（发送时用 listAllSessions 解析） */
+export interface SessionDragPayload {
+  id: string
+  label: string
+  path: string
+}
+
 /** 取路径最后一段（chip 显示用） */
 export function basenameOf(path: string): string {
   const normalized = path.replace(/[\\/]+$/, '')

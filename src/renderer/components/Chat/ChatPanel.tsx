@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type JSX } from 'react'
 import {
   MessageSquare,
   Paperclip,
@@ -21,9 +21,11 @@ import {
   buildMentionItems,
   buildReferenceBlock,
   findMentionTrigger,
+  SESSION_DRAG_MIME,
   type MentionItem,
   type MentionKind,
-  type MentionTrigger
+  type MentionTrigger,
+  type SessionDragPayload
 } from '@renderer/lib/composer-references'
 import { cn } from '@renderer/lib/utils'
 
@@ -176,6 +178,43 @@ function Composer({
   const addReferences = useComposerStore((s) => s.addReferences)
   const removeReference = useComposerStore((s) => s.removeReference)
   const clearReferences = useComposerStore((s) => s.clearReferences)
+  const [dragOver, setDragOver] = useState(false)
+
+  // 拖拽会话到输入框 → 作为 & 引用加入（跨项目引用靠会话 id 在发送时解析）
+  const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes(SESSION_DRAG_MIME)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node)) return
+    setDragOver(false)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+    setDragOver(false)
+    const raw = event.dataTransfer.getData(SESSION_DRAG_MIME)
+    if (!raw) return
+    event.preventDefault()
+    try {
+      const payload = JSON.parse(raw) as SessionDragPayload
+      if (typeof payload.id === 'string' && payload.id) {
+        addReferences([
+          {
+            id: `&${payload.id}`,
+            kind: '&',
+            label: payload.label || payload.id.slice(0, 8),
+            value: payload.id,
+            title: `引用会话：${payload.label || payload.id}`
+          }
+        ])
+      }
+    } catch {
+      // 非法拖拽数据，忽略
+    }
+  }
 
   // 随内容自适应高度（初始高度 = 单行的 4 倍，上限 160px，超出后内部滚动）
   useEffect(() => {
@@ -262,7 +301,15 @@ function Composer({
 
   return (
     <div className="shrink-0 border-t border-border p-3">
-      <div className="rounded-lg border border-border bg-card transition-colors focus-within:border-ring">
+      <div
+        className={cn(
+          'rounded-lg border border-border bg-card transition-colors focus-within:border-ring',
+          dragOver && 'border-primary ring-2 ring-primary/20'
+        )}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {references.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2 pt-2">
             {references.map((reference) => {

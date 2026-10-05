@@ -103,4 +103,24 @@ export function registerAgentIpc(): void {
       agentHost.switchSession(sessionPath)
     }
   })
+
+  ipcMain.handle(
+    IPC.SESSION_RENAME,
+    async (_event, payload: { path?: string; name?: string } | undefined): Promise<void> => {
+      const path = payload?.path
+      const name = payload?.name?.trim()
+      if (typeof path === 'string' && path && name) {
+        agentHost.renameSession(path, name)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SESSION_DELETE,
+    async (_event, payload: { path?: string } | undefined): Promise<void> => {
+      if (typeof payload?.path === 'string' && payload.path) {
+        agentHost.deleteSession(payload.path)
+      }
+    }
+  )
 }

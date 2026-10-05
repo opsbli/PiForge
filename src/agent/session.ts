@@ -206,6 +206,12 @@ export async function listSessions(cwd: string): Promise<
   return infos.map(toSessionItem)
 }
 
+/** 重命名会话：打开会话文件并追加 session_info 条目（append-only，不改写历史） */
+export async function renameSession(path: string, name: string): Promise<void> {
+  const sdk = await import('@earendil-works/pi-coding-agent')
+  sdk.SessionManager.open(path).appendSessionInfo(name)
+}
+
 /** 跨工作目录列出全部历史会话（每项带 cwd，供 UI 按项目分组） */
 export async function listAllSessions(): Promise<
   Array<{ id: string; path: string; name?: string; cwd: string; messageCount: number; modified: string; firstMessage: string }>

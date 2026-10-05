@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import type { ProjectRecord, ProjectState, SessionListItem } from '@shared/ipc-types'
+import { resetMentionCaches } from '@renderer/lib/composer-references'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useComposerStore } from '@renderer/stores/composer-store'
 import { useCostStore } from '@renderer/stores/cost-store'
+import { useSessionFlagsStore } from '@renderer/stores/session-flags-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
 /**
@@ -32,6 +34,10 @@ interface ProjectsState {
   rename: (id: string, name: string) => Promise<void>
   remove: (id: string) => Promise<void>
   activate: (id: string) => Promise<void>
+  /** 重命名会话（写回 session_info 后刷新列表与引用缓存） */
+  renameSession: (path: string, name: string) => Promise<void>
+  /** 删除会话（清理标记、刷新列表；删除活动会话时同步重载历史与摘要） */
+  deleteSession: (id: string, path: string) => Promise<void>
   /** 把主进程返回的状态镜像到本地并同步工作区 */
   applyState: (state: ProjectState) => void
 }
@@ -106,6 +112,26 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     if (get().activeProjectId === id) return
     get().applyState(await window.piforge.activateProject({ id }))
     await syncRuntime()
+  },
+
+  renameSession: async (path, name) => {
+    await window.piforge.renameSession(path, name)
+    resetMentionCaches()
+    await Promise.all([get().refreshSessions(), useCostStore.getState().refreshSessions()])
+  },
+
+  deleteSession: async (id, path) => {
+    await window.piforge.deleteSession(path)
+    // 会话已删除：清掉它的置顶/归档标记，并让会话引用缓存失效
+    useSessionFlagsStore.getState().forget(id)
+    resetMentionCaches()
+    await Promise.all([get().refreshSessions(), useCostStore.getState().refreshSessions()])
+    // 删除的可能是当前会话（agent 已切到新会话），统一重载历史与摘要
+    await useChatStore.getState().loadHistory()
+    await Promise.all([
+      useCostStore.getState().refreshSummary(),
+      useComposerStore.getState().refreshMeta()
+    ])
   },
 
   /** 把主进程返回的状态镜像到本地，并同步工作区 */
