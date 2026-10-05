@@ -1,16 +1,40 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { Check } from 'lucide-react'
-import type { CredentialStatus } from '@shared/ipc-types'
+import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
+import type { CredentialStatus, CustomProvider } from '@shared/ipc-types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { useSettingsStore } from '@renderer/stores/settings-store'
+import { useCustomProvidersStore } from '@renderer/stores/custom-providers-store'
+import { useComposerStore } from '@renderer/stores/composer-store'
 import { SettingsFieldRow } from '../SettingsFieldRow'
+import { ProviderForm } from '../ProviderForm'
 import { ChipList, NoticeBlock, SectionShell, SettingsGroup, SettingsRow, ValueText } from '../SettingsLayout'
 
-/** 模型：凭据 + 模型与思考（可写字段由字段规格驱动） */
+/** 模型：凭据 + 模型与思考 + 自定义 provider（models.json） */
 export function ModelSection(): JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const resolved = settings?.resolved
+
+  const customProviders = useCustomProvidersStore((s) => s.providers)
+  const templates = useCustomProvidersStore((s) => s.templates)
+  const loadProviders = useCustomProvidersStore((s) => s.load)
+  const loadTemplates = useCustomProvidersStore((s) => s.loadTemplates)
+  const removeProvider = useCustomProvidersStore((s) => s.remove)
+
+  // editing：undefined = 列表；null = 新建；对象 = 编辑
+  const [editing, setEditing] = useState<CustomProvider | null | undefined>(undefined)
+
+  useEffect(() => {
+    void loadProviders()
+    void loadTemplates()
+  }, [loadProviders, loadTemplates])
+
+  // provider 配置变化会重启 agent，等就绪后刷新输入框模型清单
+  const refreshComposerModels = async (): Promise<void> => {
+    await window.piforge.waitAgentReady()
+    await useComposerStore.getState().loadModels()
+    await useComposerStore.getState().refreshMeta()
+  }
 
   const [apiKey, setApiKey] = useState('')
   const [status, setStatus] = useState<CredentialStatus | null>(null)
@@ -40,6 +64,22 @@ export function ModelSection(): JSX.Element {
     } finally {
       setSaving(false)
     }
+  }
+
+  // 编辑/新建时切换到表单页
+  if (editing !== undefined) {
+    return (
+      <ProviderForm
+        provider={editing}
+        templates={templates}
+        onCancel={() => setEditing(undefined)}
+        onSaved={() => {
+          setEditing(undefined)
+          void loadProviders()
+          void refreshComposerModels()
+        }}
+      />
+    )
   }
 
   return (
@@ -94,8 +134,7 @@ export function ModelSection(): JSX.Element {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="模型与思考">
-        <SettingsFieldRow fieldKey="defaultProvider" label="默认 provider" hint="如 deepseek" />
+      <SettingsGroup title="模型与思考">        <SettingsFieldRow fieldKey="defaultProvider" label="默认 provider" hint="如 deepseek" />
         <SettingsFieldRow fieldKey="defaultModel" label="默认模型" hint="如 deepseek-flash" />
         <SettingsFieldRow
           fieldKey="defaultThinkingLevel"
@@ -140,8 +179,63 @@ export function ModelSection(): JSX.Element {
         </SettingsRow>
       </SettingsGroup>
 
+      <SettingsGroup
+        title="自定义模型（models.json）"
+        description="配置自定义 endpoint 与模型。密钥用 safeStorage 加密保存，models.json 只写入非敏感字段。"
+      >
+        {customProviders.length === 0 ? (
+          <p className="px-3 py-3 text-[11px] text-muted-foreground">
+            还没有自定义 provider，点下方按钮添加
+          </p>
+        ) : (
+          customProviders.map((provider) => (
+            <div key={provider.id} className="flex items-center gap-3 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-xs text-foreground">
+                  <span className="truncate">{provider.name}</span>
+                  <span className="shrink-0 rounded-full bg-accent px-1.5 py-px text-[10px] text-muted-foreground">
+                    {provider.enabled ? '已启用' : '已停用'}
+                  </span>
+                  {!provider.hasApiKey && (
+                    <span className="shrink-0 text-[10px] text-warning">未配置密钥</span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={provider.baseUrl}>
+                  {provider.id} · {provider.baseUrl || '未设置 Base URL'} ·{' '}
+                  {provider.models.filter((model) => model.enabled).length} 个模型
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setEditing(provider)}>
+                <Pencil />
+                编辑
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => {
+                  if (window.confirm(`确定删除自定义 provider「${provider.name}」？其模型将不再出现在选择器。`)) {
+                    void removeProvider(provider.id).then(() => refreshComposerModels())
+                  }
+                }}
+              >
+                <Trash2 />
+                删除
+              </Button>
+            </div>
+          ))
+        )}
+        <div className="px-3 py-2.5">
+          <Button variant="outline" size="sm" onClick={() => setEditing(null)}>
+            <Plus />
+            添加模型配置
+          </Button>
+        </div>
+      </SettingsGroup>
+
       <NoticeBlock>
-        自定义 endpoint 与自定义模型（agent 目录下的 models.json）尚未接入，会在后续阶段处理。
+        自定义 provider 会同步写入 agent 目录下的 models.json（不含密钥），保存后自动重启 agent
+        使其生效。模型选择器只列出有凭证可用的模型，因此需填入并保存 API Key 后才会出现。
       </NoticeBlock>
     </SectionShell>
   )

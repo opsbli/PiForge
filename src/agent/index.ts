@@ -28,6 +28,7 @@ import type {
   PackageInfo,
   PackageProgress,
   PackageResult,
+  ProviderTemplate,
   ResourcesSnapshot,
   SessionMeta,
   SessionSummary,
@@ -59,6 +60,7 @@ type InboundMessage =
   | { type: 'session_set_thinking'; level: string }
   | { type: 'session_set_model'; providerId: string; modelId: string }
   | { type: 'model_list'; requestId: string }
+  | { type: 'provider_templates'; requestId: string }
   | { type: 'approval_mode'; mode: ApprovalMode }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
@@ -91,7 +93,7 @@ type InboundMessage =
   | { type: 'dispose' }
 
 type OutboundMessage =
-  | { type: 'ready' }
+  | { type: 'ready'; agentDir: string }
   | { type: 'event'; event: AgentEvent }
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
@@ -99,6 +101,7 @@ type OutboundMessage =
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
   | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
+  | { type: 'provider_templates_result'; requestId: string; templates: ProviderTemplate[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -206,6 +209,8 @@ async function bootstrap(): Promise<void> {
   // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
   // 但内置 DeepSeek provider 的 API Key 走环境变量 DEEPSEEK_API_KEY。
   modelRuntime = await sdk.ModelRuntime.create({ allowModelNetwork: false })
+  // 自定义 provider 的运行时密钥：从进程环境读入并注册到运行时（不落盘）
+  await applyProviderKeys()
 
   // 不传 builtinExtensions：PiForge 不加载内置扩展，声明它们会造成误解
   packageManager = new sdk.DefaultPackageManager({ cwd: workspace, agentDir, settingsManager })
@@ -287,7 +292,55 @@ function mcpConfigResult(error?: string): McpConfigResult {
 }
 
 /**
- * 可用模型清单（来自共享的模型运行时）。
+ * 把环境里携带的自定义 provider 密钥注册到模型运行时。
+ * 密钥由主进程在启动 agent 时经 env 传递，不写入 models.json。
+ */
+async function applyProviderKeys(): Promise<void> {
+  if (!modelRuntime) return
+  let map: Record<string, string> = {}
+  try {
+    const raw = process.env.PIFORGE_PROVIDER_KEYS
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, string>
+      if (parsed && typeof parsed === 'object') map = parsed
+    }
+  } catch {
+    map = {}
+  }
+  for (const [providerId, key] of Object.entries(map)) {
+    if (!key) continue
+    try {
+      await modelRuntime.setRuntimeApiKey(providerId, key)
+    } catch {
+      // 单个 provider 注入失败不影响会话启动
+    }
+  }
+}
+
+/** 供应商类型模板：从内置目录里每个 provider 取一个模型推断 baseUrl / api */
+function listProviderTemplates(): ProviderTemplate[] {
+  if (!modelRuntime) return []
+  try {
+    const seen = new Set<string>()
+    const templates: ProviderTemplate[] = []
+    for (const model of modelRuntime.getModels()) {
+      const id = String(model.provider)
+      if (seen.has(id)) continue
+      seen.add(id)
+      templates.push({
+        id,
+        name: id,
+        baseUrl: model.baseUrl ?? '',
+        api: String(model.api ?? '')
+      })
+    }
+    return templates.sort((a, b) => a.id.localeCompare(b.id))
+  } catch {
+    return []
+  }
+}
+
+/** 可用模型清单（来自共享的模型运行时）。
  *
  * 只列「有凭证可用」的 provider/模型：全量目录（catalog）包含几十个 provider，
  * 未配置凭证的选中后会在调用阶段鉴权失败，因此按 getAvailableSnapshot 过滤。
@@ -397,6 +450,15 @@ async function handle(message: InboundMessage): Promise<void> {
       requestId: message.requestId,
       models: listModels(),
       current: { ...modelSelection }
+    })
+    return
+  }
+
+  if (message.type === 'provider_templates') {
+    post({
+      type: 'provider_templates_result',
+      requestId: message.requestId,
+      templates: listProviderTemplates()
     })
     return
   }
@@ -789,7 +851,7 @@ async function main(): Promise<void> {
     })
   sessionOps = initial
   await initial
-  post({ type: 'ready' })
+  post({ type: 'ready', agentDir })
 }
 
 main().catch((err) => {

@@ -101,6 +101,14 @@ export const IPC = {
   // 附件选择（输入框工具栏）
   DIALOG_PICK_ATTACHMENTS: 'dialog:pick-attachments',
 
+  // 自定义 provider / 模型（models.json）
+  CUSTOM_PROVIDER_LIST: 'provider:list',
+  CUSTOM_PROVIDER_SAVE: 'provider:save',
+  CUSTOM_PROVIDER_DELETE: 'provider:delete',
+  CUSTOM_PROVIDER_TEMPLATES: 'provider:templates',
+  CUSTOM_PROVIDER_PROBE: 'provider:probe',
+  CUSTOM_PROVIDER_FETCH_MODELS: 'provider:fetch-models',
+
   // 窗口控制（自定义标题栏）
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
@@ -761,6 +769,57 @@ export interface SessionMeta {
   contextUsage: ContextUsageView | null
 }
 
+/** 自定义模型条目（一条 provider 下可启用多个模型） */
+export interface CustomModelEntry {
+  id: string
+  name?: string
+  enabled: boolean
+}
+
+/** 自定义 provider 配置（不回传密钥本身，只回传是否已存） */
+export interface CustomProvider {
+  /** 写入 models.json 的 provider id */
+  id: string
+  name: string
+  /** 供应商类型：SDK 内置 provider id，用于预填 baseUrl / api */
+  templateProviderId: string | null
+  baseUrl: string
+  api: string
+  /** 关闭后该 provider 的模型不会出现在模型选择器 */
+  enabled: boolean
+  models: CustomModelEntry[]
+  hasApiKey: boolean
+}
+
+/** 供应商类型模板（来自 SDK 内置目录） */
+export interface ProviderTemplate {
+  id: string
+  name: string
+  baseUrl: string
+  api: string
+}
+
+/** 保存自定义 provider；apiKey 为 null/省略时保留已存密钥，空字符串表示不设置 */
+export interface SaveProviderRequest {
+  provider: Omit<CustomProvider, 'hasApiKey'>
+  apiKey?: string | null
+}
+
+/** 供应商探测（测试连接 / 获取模型）结果 */
+export interface ProviderProbeResult {
+  ok: boolean
+  error?: string
+  models: Array<{ id: string; name?: string }>
+}
+
+/** 探测请求；apiKey 省略时用该 provider 已存的密钥 */
+export interface ProviderProbeRequest {
+  providerId?: string
+  baseUrl: string
+  api: string
+  apiKey?: string
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -789,6 +848,14 @@ export interface PiForgeApi {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   /** 选择要附加的文件或文件夹（返回绝对路径；取消返回空数组） */
   pickAttachments(kind: 'file' | 'folder'): Promise<string[]>
+
+  // 自定义 provider / 模型（写入 agent 目录 models.json）
+  listCustomProviders(): Promise<CustomProvider[]>
+  saveCustomProvider(request: SaveProviderRequest): Promise<CustomProvider[]>
+  deleteCustomProvider(id: string): Promise<CustomProvider[]>
+  listProviderTemplates(): Promise<ProviderTemplate[]>
+  probeProvider(request: ProviderProbeRequest): Promise<ProviderProbeResult>
+  fetchProviderModels(request: ProviderProbeRequest): Promise<ProviderProbeResult>
 
   // 审批
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void

@@ -44,6 +44,14 @@ const api: PiForgeApi = {
   setApprovalMode: (mode) => ipcRenderer.invoke(IPC.APPROVAL_SET_MODE, mode),
   pickAttachments: (kind) => ipcRenderer.invoke(IPC.DIALOG_PICK_ATTACHMENTS, kind),
 
+  // ---- 自定义 provider / 模型 ----
+  listCustomProviders: () => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_LIST),
+  saveCustomProvider: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_SAVE, request),
+  deleteCustomProvider: (id: string) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_DELETE, id),
+  listProviderTemplates: () => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_TEMPLATES),
+  probeProvider: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_PROBE, request),
+  fetchProviderModels: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_FETCH_MODELS, request),
+
   onAgentEvent: (cb: (event: AgentEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: AgentEvent): void => cb(payload)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)

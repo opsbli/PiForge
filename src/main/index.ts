@@ -12,10 +12,12 @@ import {
   registerProjectIpc,
   registerProfileIpc,
   registerDialogIpc,
+  registerModelProviderIpc,
   disposeTerminals
 } from './ipc'
 import { agentHost } from './agent-host'
 import { initProjects } from './projects'
+import { getProviderKeys, initModelProviders } from './model-providers'
 import { stopContainer } from './sandbox'
 import { openTraceStore, closeTraceStore } from './trace-store'
 import { setupAutoUpdater } from './updater'
@@ -76,11 +78,13 @@ app.whenReady().then(async () => {
   registerProjectIpc()
   registerProfileIpc()
   registerDialogIpc()
+  registerModelProviderIpc()
   setupAutoUpdater()
   openTraceStore()
+  initModelProviders()
   // 初始化多项目注册表：首个项目默认取当前目录（可用 PIFORGE_WORKSPACE 覆盖）
   const activePath = await initProjects(process.env.PIFORGE_WORKSPACE ?? process.cwd())
-  agentHost.start(activePath)
+  agentHost.start(activePath, getProviderKeys())
   createWindow()
 
   app.on('activate', () => {

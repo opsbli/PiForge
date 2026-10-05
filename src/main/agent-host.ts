@@ -8,6 +8,7 @@ import type {
   SessionHistoryMessage,
   SessionMeta,
   ModelListItem,
+  ProviderTemplate,
   SettingsSnapshot,
   SettingsReloadResult,
   SettingsWriteRequest,
@@ -31,7 +32,7 @@ import { resolveApiKey } from './credentials'
 import { beginTrace, endTrace, recordToolSpan, getStats } from './trace-store'
 
 type AgentOutbound =
-  | { type: 'ready' }
+  | { type: 'ready'; agentDir?: string }
   | { type: 'event'; event: AgentEvent }
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
@@ -39,6 +40,7 @@ type AgentOutbound =
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
   | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
+  | { type: 'provider_templates_result'; requestId: string; templates: ProviderTemplate[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -72,6 +74,9 @@ export class AgentHost {
     string,
     (result: { models: ModelListItem[]; current: { providerId: string; modelId: string } }) => void
   >()
+  private providerTemplateWaiters = new Map<string, (templates: ProviderTemplate[]) => void>()
+  /** agent 进程报告的 agentDir（用于写 models.json） */
+  private agentDir: string | null = null
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
   private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
   private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
@@ -100,12 +105,14 @@ export class AgentHost {
   }
 
   /** 启动 Agent Utility Process（构建产物为 out/main/agent.js） */
-  start(workspace: string): void {
+  start(workspace: string, providerKeys: Record<string, string> = {}): void {
     const child = utilityProcess.fork(join(__dirname, 'agent.js'), [], {
       serviceName: 'piforge-agent',
       env: {
         ...process.env,
         PIFORGE_WORKSPACE: workspace,
+        // 自定义 provider 的运行时密钥：进程环境传递，不落盘
+        PIFORGE_PROVIDER_KEYS: JSON.stringify(providerKeys),
         // API Key：优先 safeStorage 加密存储，其次环境变量
         DEEPSEEK_API_KEY: resolveApiKey() ?? ''
       }
@@ -377,15 +384,26 @@ export class AgentHost {
   }
 
   /** 重启 Agent 进程（例如 API Key 更新后） */
-  restart(workspace: string): void {
+  restart(workspace: string, providerKeys: Record<string, string> = {}): void {
     this.dispose()
-    this.start(workspace)
+    this.start(workspace, providerKeys)
+  }
+
+  /** agent 进程所在目录（未就绪时 null） */
+  getAgentDir(): string | null {
+    return this.agentDir
+  }
+
+  /** 供应商类型模板（来自 SDK 内置目录） */
+  getProviderTemplates(): Promise<ProviderTemplate[] | null> {
+    return this.request({ type: 'provider_templates' }, this.providerTemplateWaiters)
   }
 
   private handle(message: AgentOutbound): void {
     switch (message.type) {
       case 'ready': {
         this.ready = true
+        if (typeof message.agentDir === 'string' && message.agentDir) this.agentDir = message.agentDir
         this.flushReadyWaiters()
         const queued = this.pendingPrompts
         this.pendingPrompts = []
@@ -471,6 +489,14 @@ export class AgentHost {
         if (waiter) {
           this.modelListWaiters.delete(message.requestId)
           waiter({ models: message.models, current: message.current })
+        }
+        break
+      }
+      case 'provider_templates_result': {
+        const waiter = this.providerTemplateWaiters.get(message.requestId)
+        if (waiter) {
+          this.providerTemplateWaiters.delete(message.requestId)
+          waiter(message.templates)
         }
         break
       }
