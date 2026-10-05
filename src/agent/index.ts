@@ -7,10 +7,14 @@ import {
 } from './settings-service'
 import { applySettingsWrite } from './settings-write'
 import { emptyResourcesSnapshot } from './resources-service'
+import { listPackages, toPackageProgress } from './packages-service'
 import { buildTrustSnapshot, emptyTrustSnapshot } from './trust-service'
-import type { ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
+import type { PackageManager, ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type {
+  PackageInfo,
+  PackageProgress,
+  PackageResult,
   ResourcesSnapshot,
   SessionSummary,
   SessionListItem,
@@ -46,6 +50,10 @@ type InboundMessage =
       entries: SettingsPatchEntry[]
     }
   | { type: 'settings_reload'; requestId: string }
+  | { type: 'packages_list'; requestId: string }
+  | { type: 'packages_install'; requestId: string; source: string; local: boolean }
+  | { type: 'packages_remove'; requestId: string; source: string; local: boolean }
+  | { type: 'packages_update'; requestId: string; source?: string }
   | { type: 'resources_read'; requestId: string }
   | { type: 'trust_read'; requestId: string }
   | { type: 'tree_get'; requestId: string }
@@ -66,6 +74,8 @@ type OutboundMessage =
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
   | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
+  | { type: 'packages_progress'; progress: PackageProgress }
+  | { type: 'packages_result'; requestId: string; result: PackageResult }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -82,6 +92,7 @@ let session: SessionHandle | null = null
  */
 let settingsManager: SettingsManager | null = null
 let trustStore: ProjectTrustStore | null = null
+let packageManager: PackageManager | null = null
 let sdkRequiresTrust: ((cwd: string) => boolean) | null = null
 let sdkVersion: string | null = null
 let agentDir = ''
@@ -143,6 +154,12 @@ async function bootstrap(): Promise<void> {
   trustStore = new sdk.ProjectTrustStore(agentDir)
   sdkRequiresTrust = sdk.hasTrustRequiringProjectResources
   sdkVersion = sdk.VERSION ?? null
+
+  // 不传 builtinExtensions：PiForge 不加载内置扩展，声明它们会造成误解
+  packageManager = new sdk.DefaultPackageManager({ cwd: workspace, agentDir, settingsManager })
+  packageManager.setProgressCallback((event) => {
+    post({ type: 'packages_progress', progress: toPackageProgress(event) })
+  })
 }
 
 /** 建立会话并挂上事件流 */
@@ -166,6 +183,23 @@ function currentSettingsSnapshot(): SettingsSnapshot | null {
 
 function failedWrite(error: string): SettingsWriteResult {
   return { ok: false, error, appliedLive: [], needsReload: [], settings: null, resources: null }
+}
+
+function safePackageList(): PackageInfo[] {
+  try {
+    return packageManager ? listPackages(packageManager) : []
+  } catch {
+    // 列表失败不应连带把整个动作判为失败
+    return []
+  }
+}
+
+function packageResult(): PackageResult {
+  return { ok: true, packages: safePackageList() }
+}
+
+function failedPackages(error: string): PackageResult {
+  return { ok: false, error, packages: safePackageList() }
 }
 
 async function handle(message: InboundMessage): Promise<void> {
@@ -367,6 +401,76 @@ async function handle(message: InboundMessage): Promise<void> {
           settings: currentSettingsSnapshot(),
           resources: null
         }
+      })
+    }
+    return
+  }
+
+  if (message.type === 'packages_list') {
+    post({ type: 'packages_result', requestId: message.requestId, result: packageResult() })
+    return
+  }
+
+  if (message.type === 'packages_install' || message.type === 'packages_remove') {
+    if (!packageManager) {
+      post({
+        type: 'packages_result',
+        requestId: message.requestId,
+        result: failedPackages('包管理器尚未就绪')
+      })
+      return
+    }
+
+    const source = message.source.trim()
+    if (!source) {
+      post({
+        type: 'packages_result',
+        requestId: message.requestId,
+        result: failedPackages('来源不能为空')
+      })
+      return
+    }
+
+    try {
+      if (message.type === 'packages_install') {
+        await packageManager.installAndPersist(source, { local: message.local })
+      } else {
+        await packageManager.removeAndPersist(source, { local: message.local })
+      }
+      // 动作会改动配置，重新读盘让快照与运行中的会话看到新值
+      await settingsManager?.reload()
+      post({ type: 'packages_result', requestId: message.requestId, result: packageResult() })
+    } catch (error) {
+      post({
+        type: 'packages_result',
+        requestId: message.requestId,
+        result: failedPackages(
+          `操作失败：${String(error)}。请确认来源可访问、网络可用，或先在终端里手动执行。`
+        )
+      })
+    }
+    return
+  }
+
+  if (message.type === 'packages_update') {
+    if (!packageManager) {
+      post({
+        type: 'packages_result',
+        requestId: message.requestId,
+        result: failedPackages('包管理器尚未就绪')
+      })
+      return
+    }
+
+    try {
+      await packageManager.update(message.source)
+      await settingsManager?.reload()
+      post({ type: 'packages_result', requestId: message.requestId, result: packageResult() })
+    } catch (error) {
+      post({
+        type: 'packages_result',
+        requestId: message.requestId,
+        result: failedPackages(`更新失败：${String(error)}`)
       })
     }
     return

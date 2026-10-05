@@ -62,7 +62,13 @@ export const FIELD_SPECS: SettingsFieldSpec[] = [
   { key: 'followUpMode', kind: 'enum', options: DELIVERY_MODES, scopes: BOTH, needsReload: false, defaultValue: 'one-at-a-time' },
   { key: 'shellPath', kind: 'string', scopes: BOTH, needsReload: true },
   { key: 'shellCommandPrefix', kind: 'string', scopes: BOTH, needsReload: true },
-  { key: 'npmCommand', kind: 'stringArray', scopes: BOTH, needsReload: true }
+  { key: 'npmCommand', kind: 'stringArray', scopes: BOTH, needsReload: true },
+
+  // 资源路径（扩展与 skill）。
+  // 已实测：**相对路径的排除语法会静默失效**，只有 glob（`!**/x/**`）与绝对路径生效，
+  // 因此停用 skill 由界面生成 `!**/<目录名>/**`。
+  { key: 'extensions', kind: 'stringArray', scopes: BOTH, needsReload: true },
+  { key: 'skills', kind: 'stringArray', scopes: BOTH, needsReload: true }
 ]
 
 const SPEC_BY_KEY = new Map(FIELD_SPECS.map((spec) => [spec.key, spec]))

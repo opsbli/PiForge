@@ -9,6 +9,9 @@ import type {
   SettingsReloadResult,
   SettingsWriteRequest,
   SettingsWriteResult,
+  PackageActionRequest,
+  PackageProgress,
+  PackageResult,
   ResourcesSnapshot,
   TrustSnapshot,
   ApprovalRequest,
@@ -28,6 +31,8 @@ type AgentOutbound =
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
   | { type: 'settings_reload_result'; requestId: string; result: SettingsReloadResult }
+  | { type: 'packages_progress'; progress: PackageProgress }
+  | { type: 'packages_result'; requestId: string; result: PackageResult }
   | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
   | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
@@ -50,6 +55,7 @@ export class AgentHost {
   private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
   private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
   private reloadWaiters = new Map<string, (result: SettingsReloadResult) => void>()
+  private packageWaiters = new Map<string, (result: PackageResult) => void>()
   private resourcesWaiters = new Map<string, (snapshot: ResourcesSnapshot) => void>()
   private trustWaiters = new Map<string, (snapshot: TrustSnapshot) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
@@ -159,6 +165,31 @@ export class AgentHost {
   /** 重载 agent：重读设置 + 重载资源 + 重建工具集 */
   reloadAgent(): Promise<SettingsReloadResult | null> {
     return this.request({ type: 'settings_reload' }, this.reloadWaiters)
+  }
+
+  listPackages(): Promise<PackageResult | null> {
+    return this.request({ type: 'packages_list' }, this.packageWaiters)
+  }
+
+  installPackage(request: PackageActionRequest): Promise<PackageResult | null> {
+    return this.request(
+      { type: 'packages_install', source: request.source, local: request.local },
+      this.packageWaiters
+    )
+  }
+
+  removePackage(request: PackageActionRequest): Promise<PackageResult | null> {
+    return this.request(
+      { type: 'packages_remove', source: request.source, local: request.local },
+      this.packageWaiters
+    )
+  }
+
+  updatePackages(request: { source?: string }): Promise<PackageResult | null> {
+    return this.request(
+      { type: 'packages_update', source: request.source },
+      this.packageWaiters
+    )
   }
 
   /** 读取已加载资源快照（扩展 / skill / 上下文文件） */
@@ -356,6 +387,21 @@ export class AgentHost {
         if (waiter) {
           this.trustWaiters.delete(message.requestId)
           waiter(message.snapshot)
+        }
+        break
+      }
+      case 'packages_result': {
+        const waiter = this.packageWaiters.get(message.requestId)
+        if (waiter) {
+          this.packageWaiters.delete(message.requestId)
+          waiter(message.result)
+        }
+        break
+      }
+      case 'packages_progress': {
+        // 安装 / 更新可能耗时较久，进度直接广播给所有窗口
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send(IPC.PACKAGES_PROGRESS, message.progress)
         }
         break
       }

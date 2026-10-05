@@ -18,6 +18,11 @@ export const IPC = {
   SETTINGS_READ: 'settings:read',
   SETTINGS_WRITE: 'settings:write',
   SETTINGS_RELOAD: 'settings:reload',
+  PACKAGES_LIST: 'packages:list',
+  PACKAGES_INSTALL: 'packages:install',
+  PACKAGES_REMOVE: 'packages:remove',
+  PACKAGES_UPDATE: 'packages:update',
+  PACKAGES_PROGRESS: 'packages:progress',
   RESOURCES_READ: 'resources:read',
   TRUST_READ: 'trust:read',
   APP_INFO: 'app:info',
@@ -241,6 +246,36 @@ export interface MemoryEntry {
   created: string
   modified: string
   body: string
+}
+
+/** 已配置的 Pi package */
+export interface PackageInfo {
+  source: string
+  scope: 'user' | 'project'
+  /** 对象形式且带资源过滤时为 true */
+  filtered: boolean
+  /** 已安装到的路径；未安装时为 null */
+  installedPath: string | null
+}
+
+/** 安装 / 移除 / 更新过程中上报的进度 */
+export interface PackageProgress {
+  type: 'start' | 'progress' | 'complete' | 'error'
+  action: 'install' | 'remove' | 'update' | 'clone' | 'pull'
+  source: string
+  message: string | null
+}
+
+export interface PackageActionRequest {
+  source: string
+  /** true 写入项目级配置，false 写入用户级 */
+  local: boolean
+}
+
+export interface PackageResult {
+  ok: boolean
+  error?: string
+  packages: PackageInfo[]
 }
 
 /** 应用与运行时版本（关于页） */
@@ -523,6 +558,14 @@ export interface PiForgeApi {
   writeSettings(request: SettingsWriteRequest): Promise<SettingsWriteResult>
   /** 重载 agent：重读配置 + 重载资源 + 重建工具集 */
   reloadAgent(): Promise<SettingsReloadResult>
+  listPackages(): Promise<PackageResult>
+  /** 安装 Pi package（会执行 npm / git，需先取得用户确认） */
+  installPackage(request: PackageActionRequest): Promise<PackageResult>
+  /** 移除 Pi package */
+  removePackage(request: PackageActionRequest): Promise<PackageResult>
+  /** 更新一个或全部 Pi packages */
+  updatePackages(request: { source?: string }): Promise<PackageResult>
+  onPackagesProgress(cb: (progress: PackageProgress) => void): () => void
   readResources(): Promise<ResourcesSnapshot | null>
   readTrust(): Promise<TrustSnapshot | null>
   /** 应用与运行时的版本信息（关于页） */

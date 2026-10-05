@@ -5,7 +5,8 @@ import type {
   ApprovalRequest,
   TerminalDataEvent,
   TerminalExitEvent,
-  MemoryEntry
+  MemoryEntry,
+  PackageProgress
 } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 
@@ -59,6 +60,22 @@ const api: PiForgeApi = {
   writeSettings: (request) => ipcRenderer.invoke(IPC.SETTINGS_WRITE, request),
 
   reloadAgent: () => ipcRenderer.invoke(IPC.SETTINGS_RELOAD),
+
+  listPackages: () => ipcRenderer.invoke(IPC.PACKAGES_LIST),
+
+  installPackage: (request) => ipcRenderer.invoke(IPC.PACKAGES_INSTALL, request),
+
+  removePackage: (request) => ipcRenderer.invoke(IPC.PACKAGES_REMOVE, request),
+
+  updatePackages: (request) => ipcRenderer.invoke(IPC.PACKAGES_UPDATE, request),
+
+  onPackagesProgress: (cb: (progress: PackageProgress) => void): (() => void) => {
+    const listener = (_event: unknown, payload: PackageProgress): void => cb(payload)
+    ipcRenderer.on(IPC.PACKAGES_PROGRESS, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.PACKAGES_PROGRESS, listener)
+    }
+  },
   readResources: () => ipcRenderer.invoke(IPC.RESOURCES_READ),
   readTrust: () => ipcRenderer.invoke(IPC.TRUST_READ),
   getAppInfo: () => ipcRenderer.invoke(IPC.APP_INFO),

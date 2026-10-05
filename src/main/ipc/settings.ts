@@ -1,6 +1,11 @@
 import { app, ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc-types'
-import type { AppInfo, CredentialStatus, SettingsWriteRequest } from '../../shared/ipc-types'
+import type {
+  AppInfo,
+  CredentialStatus,
+  PackageActionRequest,
+  SettingsWriteRequest
+} from '../../shared/ipc-types'
 import { saveApiKey, loadApiKey, isEncryptionAvailable } from '../credentials'
 import { agentHost } from '../agent-host'
 
@@ -45,6 +50,31 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle(IPC.SETTINGS_RELOAD, async () => {
     return agentHost.reloadAgent()
+  })
+
+  ipcMain.handle(IPC.PACKAGES_LIST, async () => {
+    return agentHost.listPackages()
+  })
+
+  ipcMain.handle(IPC.PACKAGES_INSTALL, async (_event, request: unknown) => {
+    const { source, local } = (request ?? {}) as PackageActionRequest
+    if (typeof source !== 'string' || !source.trim()) {
+      return { ok: false, error: '缺少合法的来源', packages: [] }
+    }
+    return agentHost.installPackage({ source, local: local === true })
+  })
+
+  ipcMain.handle(IPC.PACKAGES_REMOVE, async (_event, request: unknown) => {
+    const { source, local } = (request ?? {}) as PackageActionRequest
+    if (typeof source !== 'string' || !source.trim()) {
+      return { ok: false, error: '缺少合法的来源', packages: [] }
+    }
+    return agentHost.removePackage({ source, local: local === true })
+  })
+
+  ipcMain.handle(IPC.PACKAGES_UPDATE, async (_event, request: unknown) => {
+    const { source } = (request ?? {}) as { source?: string }
+    return agentHost.updatePackages(typeof source === 'string' ? { source } : {})
   })
 
   ipcMain.handle(IPC.APP_INFO, async (): Promise<AppInfo> => {

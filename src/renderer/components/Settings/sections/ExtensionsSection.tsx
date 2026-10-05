@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { useSettingsStore } from '@renderer/stores/settings-store'
+import { SettingsFieldRow } from '../SettingsFieldRow'
 import {
   ChipList,
   NoticeBlock,
@@ -9,11 +10,9 @@ import {
   ValueText
 } from '../SettingsLayout'
 
-/** 扩展（插件）：已加载扩展、加载诊断与已配置的扩展路径 */
+/** 扩展（插件）：已加载扩展、加载诊断与扩展路径 */
 export function ExtensionsSection(): JSX.Element {
-  const settings = useSettingsStore((s) => s.settings)
   const resources = useSettingsStore((s) => s.resources)
-  const resolved = settings?.resolved
 
   const extensions = resources?.extensions ?? []
   const diagnostics = resources?.extensionDiagnostics ?? []
@@ -65,16 +64,15 @@ export function ExtensionsSection(): JSX.Element {
         </SettingsGroup>
       )}
 
-      <SettingsGroup title="已配置的扩展路径" description="settings.extensions；项目级配置在项目被信任后才加载。">
-        <SettingsRow label="用户级" hint="agent 目录 settings.json">
-          <ChipList items={resolved?.extensionPaths ?? []} />
-        </SettingsRow>
-        <SettingsRow label="项目级" hint=".pi/settings.json 的 extensions">
-          <ChipList
-            items={toStringList((settings?.project.extensions as unknown) ?? [])}
-            empty="未设置"
-          />
-        </SettingsRow>
+      <SettingsGroup
+        title="扩展路径"
+        description="extensions 资源路径；项目级部分在项目被信任后才加载。内置扩展用 builtin:<名称> 引用。"
+      >
+        <SettingsFieldRow
+          fieldKey="extensions"
+          label="extensions"
+          hint="可追加文件或目录；也可用 !**\/名称\/** 排除"
+        />
       </SettingsGroup>
 
       <SettingsGroup title="其他已加载资源">
@@ -89,18 +87,10 @@ export function ExtensionsSection(): JSX.Element {
         </SettingsRow>
       </SettingsGroup>
 
-      <NoticeBlock>
-        本分类本轮只读。添加/移除扩展路径、安装 Pi packages 将在 P3 开放，
-        并需要重载 agent 生效。添加扩展路径等同于允许其代码在 agent 进程内执行，
-        届时会先展示影响并要求确认。
+      <NoticeBlock tone="warning">
+        扩展在 agent 进程内执行代码。添加扩展路径等同于允许其代码运行，保存前请确认来源可信。
+        写入后需要重载 agent 才会加载。Pi packages 的安装与移除在「Packages」分类。
       </NoticeBlock>
     </SectionShell>
   )
-}
-
-/** 项目级字段可能是字符串、字符串数组或未设置，统一成字符串数组 */
-function toStringList(value: unknown): string[] {
-  if (typeof value === 'string') return [value]
-  if (Array.isArray(value)) return value.map((item) => String(item))
-  return []
 }
