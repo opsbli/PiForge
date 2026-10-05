@@ -84,6 +84,16 @@ function withHasKey(provider: StoredProvider): CustomProvider {
   return { ...provider, hasApiKey: Boolean(keys[provider.id]) }
 }
 
+/**
+ * 自定义 provider 的 id 统一加 `custom-` 前缀。
+ *
+ * 原因：models.json 里某个 provider 一旦带 `models` 字段，SDK 会**整体替换**该 provider
+ * 的模型列表（provider-composer: `config.models.map(...)`）。而内置 provider 的 id 与
+ * 「供应商类型」名一致（如 DeepSeek），若自定义配置直接复用同 id，就会把内置模型全部挤掉
+ * （典型症状：默认模型 deepseek-flash 从选择器里消失）。
+ */
+const CUSTOM_PREFIX = 'custom-'
+
 /** 由名称派生 provider id：只保留 ASCII 字母数字，其余折叠为连字符 */
 function slugify(name: string, fallback: string): string {
   const ascii = name
@@ -98,9 +108,11 @@ function slugify(name: string, fallback: string): string {
   return slug || fallback
 }
 
-/** 保证 id 在现有配置中唯一，重名追加 -2 / -3 */
-function uniqueId(base: string): string {
-  const taken = new Set(providers.map((provider) => provider.id))
+/** 保证 id 在现有配置中唯一，重名追加 -2 / -3（可排除正在编辑的条目） */
+function uniqueId(base: string, excludeId?: string): string {
+  const taken = new Set(
+    providers.map((provider) => provider.id).filter((id) => id !== excludeId)
+  )
   if (!taken.has(base)) return base
   let index = 2
   while (taken.has(`${base}-${index}`)) index += 1
@@ -116,18 +128,35 @@ export function getProviderKeys(): Record<string, string> {
   return { ...keys }
 }
 
+/** 把密钥从旧 id 迁到新 id（id 迁移时使用） */
+function migrateKey(from: string, to: string): void {
+  if (from === to || !keys[from]) return
+  keys[to] = keys[from]
+  delete keys[from]
+  persistKeys()
+}
+
 export function saveProvider(request: SaveProviderRequest): CustomProvider[] {
   const incoming = request.provider
-  // 编辑时沿用原 id（密钥与 models.json 映射保持稳定）；新建时由名称派生
   const editingId = request.id?.trim()
-  const id =
-    editingId ||
-    uniqueId(
-      slugify(
+
+  let id: string
+  if (editingId) {
+    // 旧数据可能把内置 provider id 当作自定义 id（模板 id 同名）：保存时迁移，避免继续覆盖内置
+    const collidesWithBuiltin =
+      Boolean(incoming.templateProviderId) && editingId === incoming.templateProviderId
+    id = collidesWithBuiltin
+      ? uniqueId(`${CUSTOM_PREFIX}${editingId}`, editingId)
+      : editingId
+    if (id !== editingId) migrateKey(editingId, id)
+  } else {
+    id = uniqueId(
+      `${CUSTOM_PREFIX}${slugify(
         incoming.name,
-        incoming.templateProviderId ? `${incoming.templateProviderId}-custom` : 'custom-provider'
-      )
+        incoming.templateProviderId ? `${incoming.templateProviderId}-provider` : 'provider'
+      )}`
     )
+  }
 
   const next: StoredProvider = {
     id,
@@ -143,9 +172,15 @@ export function saveProvider(request: SaveProviderRequest): CustomProvider[] {
     }))
   }
 
-  const index = providers.findIndex((provider) => provider.id === id)
+  const index = providers.findIndex(
+    (provider) => provider.id === id || (editingId && provider.id === editingId)
+  )
   if (index >= 0) providers[index] = next
   else providers.push(next)
+
+  if (editingId && editingId !== id) {
+    providers = providers.filter((provider) => provider.id !== editingId)
+  }
 
   if (typeof request.apiKey === 'string') {
     const key = request.apiKey.trim()
