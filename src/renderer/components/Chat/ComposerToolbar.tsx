@@ -284,7 +284,7 @@ function ModelPicker(): JSX.Element {
               grouped.map(([provider, list]) => (
                 <div key={provider} className="mb-1">
                   <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {provider}
+                    {list[0]?.providerName ?? provider}
                   </div>
                   {list.map((model) => {
                     const selected = model.providerId === providerId && model.id === modelId

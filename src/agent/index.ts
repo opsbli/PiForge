@@ -313,6 +313,20 @@ async function applyProviderKeys(): Promise<void> {
     }
   }
 }
+/** provider id → 展示名（内置名称或自定义配置的 name） */
+function providerNameMap(): Map<string, string> {
+  const map = new Map<string, string>()
+  if (!modelRuntime) return map
+  try {
+    for (const provider of modelRuntime.getProviders()) {
+      if (provider.name) map.set(String(provider.id), provider.name)
+    }
+  } catch {
+    // 取不到就退回用 id 展示
+  }
+  return map
+}
+
 /** 可用模型清单（来自共享的模型运行时）。
  *
  * 只列「有凭证可用」的 provider/模型：全量目录（catalog）包含几十个 provider，
@@ -321,26 +335,25 @@ async function applyProviderKeys(): Promise<void> {
  */
 function listModels(): ModelListItem[] {
   if (!modelRuntime) return []
-  try {
-    const items = modelRuntime.getAvailableSnapshot().map((model) => ({
-      providerId: String(model.provider),
+  const names = providerNameMap()
+  const toItem = (model: { provider: unknown; id: string; name: string; reasoning?: boolean }): ModelListItem => {
+    const providerId = String(model.provider)
+    return {
+      providerId,
+      providerName: names.get(providerId) ?? providerId,
       id: model.id,
       name: model.name,
       reasoning: Boolean(model.reasoning)
-    }))
+    }
+  }
+  try {
+    const items = modelRuntime.getAvailableSnapshot().map((model) => toItem(model))
     const currentIncluded = items.some(
       (item) => item.providerId === modelSelection.providerId && item.id === modelSelection.modelId
     )
     if (!currentIncluded) {
       const current = modelRuntime.getModel(modelSelection.providerId, modelSelection.modelId)
-      if (current) {
-        items.unshift({
-          providerId: String(current.provider),
-          id: current.id,
-          name: current.name,
-          reasoning: Boolean(current.reasoning)
-        })
-      }
+      if (current) items.unshift(toItem(current))
     }
     return items
   } catch {

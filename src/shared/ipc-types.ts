@@ -747,6 +747,8 @@ export type ApprovalMode = 'auto' | 'ask'
 /** 模型清单项（输入框模型选择器） */
 export interface ModelListItem {
   providerId: string
+  /** provider 展示名（内置名称或自定义配置的 name），用于选择器分组标题 */
+  providerName: string
   id: string
   name: string
   reasoning: boolean

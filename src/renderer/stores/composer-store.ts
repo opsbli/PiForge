@@ -179,11 +179,12 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   clearAttachments: () => set({ attachments: [] })
 }))
 
-/** 当前模型的展示名：优先取清单里的 name */
+/** 当前模型的展示名：provider 展示名 + 模型名（优先取清单里的值） */
 export function modelLabelOf(state: Pick<ComposerState, 'models' | 'providerId' | 'modelId'>): string {
   const found = state.models.find(
     (model) => model.providerId === state.providerId && model.id === state.modelId
   )
-  const name = found?.name ?? state.modelId
-  return state.providerId ? `${state.providerId} · ${name}` : name || '未选择模型'
+  const modelName = found?.name ?? state.modelId
+  const providerName = found?.providerName ?? state.providerId
+  return providerName ? `${providerName} · ${modelName}` : modelName || '未选择模型'
 }
