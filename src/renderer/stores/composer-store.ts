@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import type { ApprovalMode, ContextUsageView, ModelListItem, SessionMeta } from '@shared/ipc-types'
+import { basenameOf, type ComposerReference } from '@renderer/lib/composer-references'
 
 /**
  * 输入框工具栏状态。
  *
  * 审批模式与思考档位是界面偏好，持久化到 localStorage；模型、上下文用量、思考档位
- * 以 agent 会话为准（refreshMeta 拉取）。附件是待注入下一条消息的路径列表。
+ * 以 agent 会话为准（refreshMeta 拉取）。引用（文件 / Skill / MCP / 会话）以 chip 形式
+ * 显示在输入框内部，随下一条消息一起发出。
  */
 
 const STORAGE_KEY = 'piforge.composer'
@@ -65,8 +67,8 @@ interface ComposerState {
   modelId: string
   models: ModelListItem[]
   contextUsage: ContextUsageView | null
-  /** 待注入下一条消息的附件绝对路径 */
-  attachments: string[]
+  /** 待随下一条消息发出的引用（文件 / Skill / MCP / 会话） */
+  references: ComposerReference[]
 
   load: () => Promise<void>
   refreshMeta: () => Promise<void>
@@ -76,10 +78,10 @@ interface ComposerState {
   loadModels: () => Promise<void>
   setModel: (providerId: string, modelId: string) => Promise<void>
   addAttachments: (kind: 'file' | 'folder') => Promise<void>
-  /** 直接添加路径（@ 引用选中的文件/文件夹） */
-  addPaths: (paths: string[]) => void
-  removeAttachment: (path: string) => void
-  clearAttachments: () => void
+  /** 添加引用（@ 文件 / / Skill / # MCP / & 会话） */
+  addReferences: (references: ComposerReference[]) => void
+  removeReference: (id: string) => void
+  clearReferences: () => void
 }
 
 let subscribed = false
@@ -92,7 +94,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   modelId: '',
   models: [],
   contextUsage: null,
-  attachments: [],
+  references: [],
 
   load: async () => {
     if (!subscribed) {
@@ -170,21 +172,28 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   addAttachments: async (kind) => {
     const picked = await window.piforge.pickAttachments(kind)
     if (picked.length === 0) return
-    get().addPaths(picked)
+    get().addReferences(
+      picked.map((path) => ({
+        id: `@${path}`,
+        kind: '@' as const,
+        label: basenameOf(path),
+        value: path,
+        title: path
+      }))
+    )
   },
 
-  addPaths: (paths) =>
-    set((state) => ({
-      attachments: [
-        ...state.attachments,
-        ...paths.filter((path) => path && !state.attachments.includes(path))
-      ]
-    })),
+  addReferences: (references) =>
+    set((state) => {
+      const existing = new Set(state.references.map((item) => item.id))
+      const next = references.filter((item) => item.id && !existing.has(item.id))
+      return next.length === 0 ? state : { references: [...state.references, ...next] }
+    }),
 
-  removeAttachment: (path) =>
-    set((state) => ({ attachments: state.attachments.filter((item) => item !== path) })),
+  removeReference: (id) =>
+    set((state) => ({ references: state.references.filter((item) => item.id !== id) })),
 
-  clearAttachments: () => set({ attachments: [] })
+  clearReferences: () => set({ references: [] })
 }))
 
 /** 当前模型的展示名：provider 展示名 + 模型名（优先取清单里的值） */

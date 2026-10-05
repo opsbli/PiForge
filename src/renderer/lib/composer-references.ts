@@ -21,15 +21,28 @@ export interface MentionItem {
   key: string
   label: string
   hint: string
-  /** 插入到文本里的内容（不含触发符） */
-  insert: string
-  /**
-   * 选中后的实际载荷。
-   *
-   * `@` 文件引用选中后不写文本标记，而是与 📎 一致地变成输入框内部的 chip，
-   * 所以这里带绝对路径供 chip 列表使用。
-   */
-  payload?: string
+  /** 选中后的真实载荷：绝对路径 / Skill 名 / MCP 工具名 / 会话 id */
+  payload: string
+}
+
+/** 输入框内部已选中的引用（chip） */
+export interface ComposerReference {
+  /** 唯一键，形如 `@C:/a/b.md`、`/docx`、`#mcp__x__y`、`&<sessionId>` */
+  id: string
+  kind: MentionKind
+  /** chip 上显示的文字 */
+  label: string
+  /** 解析用的真实值 */
+  value: string
+  /** 悬停提示 */
+  title?: string
+}
+
+/** 取路径最后一段（chip 显示用） */
+export function basenameOf(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, '')
+  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
+  return index >= 0 ? normalized.slice(index + 1) : normalized
 }
 
 interface MentionMeta {
@@ -163,10 +176,9 @@ export async function buildMentionItems(
       .filter((file) => needle === '' || matches(file.relativePath, needle))
       .slice(0, 40)
       .map((file) => ({
-        key: `@${file.relativePath}`,
+        key: `@${file.path}`,
         label: file.relativePath,
         hint: file.isDirectory ? '文件夹' : '文件',
-        insert: file.relativePath,
         payload: file.path
       }))
   }
@@ -180,7 +192,7 @@ export async function buildMentionItems(
         key: `/${skill.name}`,
         label: skill.name,
         hint: skill.description?.slice(0, 60) ?? '',
-        insert: skill.name
+        payload: skill.name
       }))
   }
 
@@ -193,7 +205,7 @@ export async function buildMentionItems(
         key: `#${tool.name}`,
         label: tool.name,
         hint: tool.server ? `MCP · ${tool.server}` : 'MCP',
-        insert: tool.name
+        payload: tool.name
       }))
   }
 
@@ -212,7 +224,7 @@ export async function buildMentionItems(
       key: `&${item.id}`,
       label: sessionLabel(item),
       hint: `${item.id.slice(0, 8)} · ${item.messageCount} 条消息`,
-      insert: item.id
+      payload: item.id
     }))
 }
 
@@ -267,12 +279,16 @@ function collectFilePaths(text: string): string[] {
 /** 把文本里的引用标记解析为引用块；没有任何有效引用时返回空串 */
 export async function buildReferenceBlock(
   text: string,
-  attachments: string[]
+  references: ComposerReference[]
 ): Promise<string> {
-  const files = [...attachments, ...collectFilePaths(text)]
-  const skillNames = collect(text, '/')
-  const toolNames = collect(text, '#')
-  const sessionTokens = collect(text, '&')
+  const picked = (kind: MentionKind): string[] =>
+    references.filter((item) => item.kind === kind).map((item) => item.value)
+  const merge = (a: string[], b: string[]): string[] => [...new Set([...a, ...b])]
+
+  const files = merge(picked('@'), collectFilePaths(text))
+  const skillNames = merge(picked('/'), collect(text, '/'))
+  const toolNames = merge(picked('#'), collect(text, '#'))
+  const sessionTokens = merge(picked('&'), collect(text, '&'))
 
   const [skills, tools, sessions] = await Promise.all([
     skillNames.length > 0 ? loadSkills() : Promise.resolve<SkillInfo[]>([]),

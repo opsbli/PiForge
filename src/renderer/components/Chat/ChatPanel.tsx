@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Paperclip, ScrollText, Sparkles, User } from 'lucide-react'
+import {
+  MessageSquare,
+  Paperclip,
+  Plug,
+  ScrollText,
+  Sparkles,
+  User,
+  type LucideIcon
+} from 'lucide-react'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { MarkdownText } from '@renderer/components/Chat/MarkdownText'
@@ -9,12 +17,23 @@ import { ToolCallCard } from '@renderer/components/ToolCall/ToolCallCard'
 import { useChatStore, type ChatMessage } from '@renderer/stores/chat-store'
 import { useComposerStore } from '@renderer/stores/composer-store'
 import {
+  basenameOf,
   buildMentionItems,
   buildReferenceBlock,
   findMentionTrigger,
   type MentionItem,
+  type MentionKind,
   type MentionTrigger
 } from '@renderer/lib/composer-references'
+import { cn } from '@renderer/lib/utils'
+
+/** 引用 chip 的图标与配色：@ 与 📎 保持一致（中性），其余三类按类型区分 */
+const REFERENCE_STYLE: Record<MentionKind, { icon: LucideIcon; className: string }> = {
+  '@': { icon: Paperclip, className: 'bg-accent/60 text-muted-foreground' },
+  '/': { icon: Sparkles, className: 'bg-violet-500/15 text-violet-400' },
+  '#': { icon: Plug, className: 'bg-emerald-500/15 text-emerald-400' },
+  '&': { icon: MessageSquare, className: 'bg-sky-500/15 text-sky-400' }
+}
 
 /** 中栏「对话」视图：消息流 + 输入区 */
 export function ChatPanel({ active = true }: { active?: boolean }): JSX.Element {
@@ -144,10 +163,10 @@ function Composer({
   const [items, setItems] = useState<MentionItem[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const attachments = useComposerStore((s) => s.attachments)
-  const addPaths = useComposerStore((s) => s.addPaths)
-  const removeAttachment = useComposerStore((s) => s.removeAttachment)
-  const clearAttachments = useComposerStore((s) => s.clearAttachments)
+  const references = useComposerStore((s) => s.references)
+  const addReferences = useComposerStore((s) => s.addReferences)
+  const removeReference = useComposerStore((s) => s.removeReference)
+  const clearReferences = useComposerStore((s) => s.clearReferences)
 
   // 随内容自适应高度（上限 160px，超出后内部滚动）
   useEffect(() => {
@@ -178,7 +197,7 @@ function Composer({
 
   const open = mention !== null && !disabled
 
-  const canSend = !disabled && (value.trim().length > 0 || attachments.length > 0)
+  const canSend = !disabled && (value.trim().length > 0 || references.length > 0)
 
   const syncMention = (text: string, caret: number): void => {
     setMention(findMentionTrigger(text, caret))
@@ -187,27 +206,21 @@ function Composer({
   const insertMention = (item: MentionItem): void => {
     if (!mention) return
     const caret = textareaRef.current?.selectionStart ?? value.length
-
-    // @ 引用文件：与 📎 保持一致，只加输入框内部的 chip，不在正文里留标记
-    if (mention.kind === '@' && item.payload) {
-      const next = `${value.slice(0, mention.start)}${value.slice(caret)}`
-      const position = mention.start
-      setValue(next)
-      setMention(null)
-      addPaths([item.payload])
-      window.requestAnimationFrame(() => {
-        const element = textareaRef.current
-        if (!element) return
-        element.focus()
-        element.setSelectionRange(position, position)
-      })
-      return
-    }
-
-    const next = `${value.slice(0, mention.start)}${mention.kind}${item.insert} ${value.slice(caret)}`
-    const position = mention.start + 1 + item.insert.length + 1
+    // 四类引用统一：移除正文里的触发片段，改为输入框内部的 chip
+    const next = `${value.slice(0, mention.start)}${value.slice(caret)}`
+    const position = mention.start
     setValue(next)
     setMention(null)
+    addReferences([
+      {
+        id: item.key,
+        kind: mention.kind,
+        // 文件与 📎 chip 一样只显示文件名，完整路径放到悬停提示
+        label: mention.kind === '@' ? basenameOf(item.payload) : item.label,
+        value: item.payload,
+        title: item.hint ? `${item.hint}：${item.payload}` : item.payload
+      }
+    ])
     window.requestAnimationFrame(() => {
       const element = textareaRef.current
       if (!element) return
@@ -219,38 +232,45 @@ function Composer({
   const submit = async (): Promise<void> => {
     if (!canSend) return
     const text = value.trim()
-    // 把 @ / # & 标记与附件解析成引用块，随消息一起交给模型
-    const block = await buildReferenceBlock(text, attachments)
+    // 把 chip 引用与正文里的标记解析成引用块，随消息一起交给模型
+    const block = await buildReferenceBlock(text, references)
     const payload = block ? `${text}${text ? '\n\n' : ''}${block}` : text
     onSend(payload)
     setValue('')
     setMention(null)
-    clearAttachments()
+    clearReferences()
   }
 
   return (
     <div className="shrink-0 border-t border-border p-3">
       <div className="rounded-lg border border-border bg-card transition-colors focus-within:border-ring">
-        {attachments.length > 0 && (
+        {references.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2 pt-2">
-            {attachments.map((path) => (
-              <span
-                key={path}
-                title={path}
-                className="flex max-w-[16rem] items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[10px] text-foreground"
-              >
-                <Paperclip className="size-2.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{basenameOf(path)}</span>
-                <button
-                  type="button"
-                  aria-label={`移除 ${path}`}
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => removeAttachment(path)}
+            {references.map((reference) => {
+              const style = REFERENCE_STYLE[reference.kind]
+              const Icon = style.icon
+              return (
+                <span
+                  key={reference.id}
+                  title={reference.title ?? reference.value}
+                  className={cn(
+                    'flex max-w-[16rem] items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
+                    style.className
+                  )}
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  <Icon className="size-2.5 shrink-0" />
+                  <span className="truncate">{reference.label}</span>
+                  <button
+                    type="button"
+                    aria-label={`移除 ${reference.label}`}
+                    className="opacity-60 hover:text-destructive hover:opacity-100"
+                    onClick={() => removeReference(reference.id)}
+                  >
+                    ×
+                  </button>
+                </span>
+              )
+            })}
           </div>
         )}
 
@@ -319,11 +339,4 @@ function Composer({
       </div>
     </div>
   )
-}
-
-/** 取路径最后一段，用于附件 chip */
-function basenameOf(path: string): string {
-  const normalized = path.replace(/[\\/]+$/, '')
-  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
-  return index >= 0 ? normalized.slice(index + 1) : normalized
 }
