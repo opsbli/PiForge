@@ -32,8 +32,10 @@ import { cn } from '@renderer/lib/utils'
  *
  * 单行高度（行高 + 上下内边距 + 上下边框）× 该倍数即初始高度；
  * 内容超出后自动增高，上限 160px。
+ *
+ * 取值过程：1（原始单行）→ 2 → 4（用户两次要求翻倍）。
  */
-const COMPOSER_HEIGHT_MULTIPLIER = 2
+const COMPOSER_HEIGHT_MULTIPLIER = 4
 
 /** 引用 chip 的图标与配色：@ 与 📎 保持一致（中性），其余三类按类型区分 */const REFERENCE_STYLE: Record<MentionKind, { icon: LucideIcon; className: string }> = {
   '@': { icon: Paperclip, className: 'bg-accent/60 text-muted-foreground' },
@@ -175,7 +177,7 @@ function Composer({
   const removeReference = useComposerStore((s) => s.removeReference)
   const clearReferences = useComposerStore((s) => s.clearReferences)
 
-  // 随内容自适应高度（初始高度 = 单行的 2 倍，上限 160px，超出后内部滚动）
+  // 随内容自适应高度（初始高度 = 单行的 4 倍，上限 160px，超出后内部滚动）
   useEffect(() => {
     const element = textareaRef.current
     if (!element) return
