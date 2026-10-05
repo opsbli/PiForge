@@ -25,6 +25,8 @@ interface LayoutState {
   rightPanelOpen: boolean
   rightTab: RightTab
   mainView: MainView
+  /** 中栏是否处于设置视图（不入 MainView，因为它是覆盖模式而非对等视图） */
+  settingsOpen: boolean
 
   /** 拖拽左栏边缘：正 delta 变宽 */
   resizeSidebar: (deltaX: number) => void
@@ -38,6 +40,9 @@ interface LayoutState {
 
   setRightTab: (tab: RightTab) => void
   setMainView: (view: MainView) => void
+
+  openSettings: () => void
+  closeSettings: () => void
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -47,6 +52,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   rightPanelOpen: true,
   rightTab: 'files',
   mainView: 'chat',
+  settingsOpen: false,
 
   resizeSidebar: (deltaX) =>
     set((state) => ({
@@ -71,5 +77,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
 
   setRightTab: (rightTab) => set({ rightTab }),
-  setMainView: (mainView) => set({ mainView })
+  setMainView: (mainView) => set({ mainView }),
+
+  openSettings: () => set({ settingsOpen: true }),
+  closeSettings: () => set({ settingsOpen: false })
 }))

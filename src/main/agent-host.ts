@@ -5,6 +5,9 @@ import type {
   SessionSummary,
   SessionListItem,
   SessionHistoryMessage,
+  SettingsSnapshot,
+  ResourcesSnapshot,
+  TrustSnapshot,
   ApprovalRequest,
   TreeEntry
 } from '../shared/ipc-types'
@@ -19,6 +22,9 @@ type AgentOutbound =
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
+  | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
+  | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
+  | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -36,6 +42,9 @@ export class AgentHost {
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
+  private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
+  private resourcesWaiters = new Map<string, (snapshot: ResourcesSnapshot) => void>()
+  private trustWaiters = new Map<string, (snapshot: TrustSnapshot) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
@@ -106,6 +115,40 @@ export class AgentHost {
       this.sessionListWaiters.set(requestId, resolve)
       this.child.postMessage({ type: 'session_list', requestId })
     })
+  }
+
+  /**
+   * 向 agent 进程发一个带 requestId 的读取请求并等待回包。
+   * agent 未就绪时返回 null（而不是伪造空数据），由 UI 自行展示未就绪状态。
+   */
+  private request<T>(
+    payload: Record<string, unknown>,
+    waiters: Map<string, (value: T) => void>
+  ): Promise<T | null> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve(null)
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      waiters.set(requestId, resolve)
+      this.child.postMessage({ ...payload, requestId })
+    })
+  }
+
+  /** 读取设置只读快照（设置中心） */
+  readSettings(): Promise<SettingsSnapshot | null> {
+    return this.request({ type: 'settings_read' }, this.settingsWaiters)
+  }
+
+  /** 读取已加载资源快照（扩展 / skill / 上下文文件） */
+  readResources(): Promise<ResourcesSnapshot | null> {
+    return this.request({ type: 'resources_read' }, this.resourcesWaiters)
+  }
+
+  /** 读取项目信任快照 */
+  readTrust(): Promise<TrustSnapshot | null> {
+    return this.request({ type: 'trust_read' }, this.trustWaiters)
   }
 
   /** 读取当前会话活动分支的历史消息（切换/恢复会话后回显） */
@@ -253,6 +296,30 @@ export class AgentHost {
         if (waiter) {
           this.historyWaiters.delete(message.requestId)
           waiter(message.messages)
+        }
+        break
+      }
+      case 'settings_snapshot': {
+        const waiter = this.settingsWaiters.get(message.requestId)
+        if (waiter) {
+          this.settingsWaiters.delete(message.requestId)
+          waiter(message.snapshot)
+        }
+        break
+      }
+      case 'resources_snapshot': {
+        const waiter = this.resourcesWaiters.get(message.requestId)
+        if (waiter) {
+          this.resourcesWaiters.delete(message.requestId)
+          waiter(message.snapshot)
+        }
+        break
+      }
+      case 'trust_snapshot': {
+        const waiter = this.trustWaiters.get(message.requestId)
+        if (waiter) {
+          this.trustWaiters.delete(message.requestId)
+          waiter(message.snapshot)
         }
         break
       }

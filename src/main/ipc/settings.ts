@@ -1,6 +1,6 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc-types'
-import type { CredentialStatus } from '../../shared/ipc-types'
+import type { AppInfo, CredentialStatus } from '../../shared/ipc-types'
 import { saveApiKey, loadApiKey, isEncryptionAvailable } from '../credentials'
 import { agentHost } from '../agent-host'
 
@@ -18,6 +18,27 @@ export function registerSettingsIpc(): void {
     // 重启 Agent，使新凭据生效
     const workspace = process.env.PIFORGE_WORKSPACE ?? process.cwd()
     agentHost.restart(workspace)
+  })
+
+  ipcMain.handle(IPC.SETTINGS_READ, async () => {
+    return agentHost.readSettings()
+  })
+
+  ipcMain.handle(IPC.RESOURCES_READ, async () => {
+    return agentHost.readResources()
+  })
+
+  ipcMain.handle(IPC.APP_INFO, async (): Promise<AppInfo> => {
+    return {
+      appVersion: app.getVersion(),
+      electron: process.versions.electron ?? 'unknown',
+      chrome: process.versions.chrome ?? 'unknown',
+      node: process.versions.node ?? 'unknown'
+    }
+  })
+
+  ipcMain.handle(IPC.TRUST_READ, async () => {
+    return agentHost.readTrust()
   })
 
   ipcMain.handle(IPC.CREDENTIAL_STATUS, async (): Promise<CredentialStatus> => {

@@ -15,6 +15,10 @@ export const IPC = {
   // 设置
   SET_API_KEY: 'settings:set-api-key',
   CREDENTIAL_STATUS: 'settings:credential-status',
+  SETTINGS_READ: 'settings:read',
+  RESOURCES_READ: 'resources:read',
+  TRUST_READ: 'trust:read',
+  APP_INFO: 'app:info',
 
   // 工作区
   WORKSPACE_GET: 'workspace:get',
@@ -237,6 +241,193 @@ export interface MemoryEntry {
   body: string
 }
 
+/** 应用与运行时版本（关于页） */
+export interface AppInfo {
+  appVersion: string
+  electron: string
+  chrome: string
+  node: string
+}
+
+/* ------------------------------------------------------------------ *
+ * 设置中心：只读快照类型
+ * 这些类型跨 renderer / main / agent 三端共用，因此不引用 SDK 类型（用 string 兑宽）。
+ * ------------------------------------------------------------------ */
+
+export type ThinkingLevelName = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ProjectTrustDefault = 'ask' | 'always' | 'never'
+export type TransportName = 'auto' | 'sse' | 'websocket' | 'websocket-cached'
+export type CacheWarmingName = 'off' | 'streaming' | 'idle'
+export type CodemodeModeName = 'on' | 'only'
+
+/** 配置文件/目录的存在性与体积，被设置中心的多个分类复用 */
+export interface FileProbe {
+  path: string
+  exists: boolean
+  isDirectory: boolean
+  /** 文件字节数；目录或不存在时为 null */
+  bytes: number | null
+}
+
+/** 设置相关路径集合 */
+export interface SettingsPaths {
+  agentDir: string
+  cwd: string
+  globalSettings: string
+  projectSettings: string
+  globalMcp: string
+  projectMcp: string
+  trustFile: string
+  authFile: string
+}
+
+/**
+ * 解析后的**生效值**。
+ *
+ * 与 `global` / `project` 的区别：后者只包含显式写入的字段，
+ * 这里是通过 SDK getter 得到的实际生效值（含内置默认）。
+ * UI 必须把两者分开呈现，不能把生效值当成「已配置值」。
+ */
+export interface ResolvedSettings {
+  // 模型
+  defaultProvider: string | null
+  defaultModel: string | null
+  defaultThinkingLevel: ThinkingLevelName
+  modelThinkingLevels: Record<string, ThinkingLevelName>
+  enabledModels: string[] | null
+  hideThinkingBlock: boolean
+  cacheWarming: CacheWarmingName
+  // 工具
+  defaultTools: string[] | null
+  codemodeMode: CodemodeModeName | null
+  codemodeInlineBudget: number | null
+  // 会话与上下文
+  compactionEnabled: boolean
+  compactionReserveTokens: number
+  compactionKeepRecentTokens: number
+  branchSummaryReserveTokens: number
+  branchSummarySkipPrompt: boolean
+  sessionDir: string | null
+  transport: TransportName
+  httpProxy: string | null
+  httpIdleTimeoutMs: number
+  retryEnabled: boolean
+  retryMaxRetries: number
+  retryBaseDelayMs: number
+  steeringMode: 'all' | 'one-at-a-time'
+  followUpMode: 'all' | 'one-at-a-time'
+  // 资源
+  packages: string[]
+  extensionPaths: string[]
+  skillPaths: string[]
+  promptTemplatePaths: string[]
+  themePaths: string[]
+  enableSkillCommands: boolean
+  // 信任
+  defaultProjectTrust: ProjectTrustDefault
+  // 其他
+  shellPath: string | null
+  shellCommandPrefix: string | null
+  npmCommand: string[] | null
+  enableInstallTelemetry: boolean
+  enableAnalytics: boolean
+  imageAutoResize: boolean
+  blockImages: boolean
+}
+
+/** 设置只读快照 */
+export interface SettingsSnapshot {
+  paths: SettingsPaths
+  /** 依赖版本（SDK 版本由 agent 进程上报） */
+  versions: { sdk: string | null }
+  /** 全局 settings.json 的显式字段 */
+  global: Record<string, unknown>
+  /** 项目 .pi/settings.json 的显式字段 */
+  project: Record<string, unknown>
+  /** 合并后的显式字段（全局 + 项目覆盖） */
+  effective: Record<string, unknown>
+  resolved: ResolvedSettings
+  projectTrusted: boolean
+  /** 读取过程中遇到的错误（文件损坏等） */
+  errors: Array<{ scope: 'global' | 'project'; message: string }>
+  files: FileProbe[]
+}
+
+/** 资源加载诊断 */
+export interface ResourceDiagnosticInfo {
+  path: string
+  message: string
+  severity: 'error' | 'warning'
+}
+
+export interface ExtensionInfo {
+  /** 展示名：文件取 basename，内置取 builtin:<name> */
+  name: string
+  path: string
+  /** 来源标签，来自 SourceInfo.source */
+  source: string
+  scope: string
+  builtin: boolean
+  toolCount: number
+  commandCount: number
+}
+
+export interface SkillInfo {
+  name: string
+  description: string
+  filePath: string
+  baseDir: string
+  source: string
+  scope: string
+  /** true 表示只能由用户显式调用，不进入模型提示 */
+  disableModelInvocation: boolean
+}
+
+/** 已注册工具的简要信息 */
+export interface ToolInfoLite {
+  name: string
+  description: string
+  /** 归属：内置 / MCP / 扩展 */
+  origin: 'builtin' | 'mcp' | 'extension'
+  /** MCP 服务器名（origin 为 mcp 时） */
+  server: string | null
+  exposure: string
+  /** 当前是否处于激活（会向模型声明）状态 */
+  active: boolean
+}
+
+/** 已加载资源只读快照 */
+export interface ResourcesSnapshot {
+  extensions: ExtensionInfo[]
+  extensionDiagnostics: ResourceDiagnosticInfo[]
+  skills: SkillInfo[]
+  skillDiagnostics: ResourceDiagnosticInfo[]
+  /** prompt 模板与主题属于 TUI 概念，GUI 只统计数量 */
+  counts: { skills: number; prompts: number; themes: number }
+  /** 已加载的上下文文件（AGENTS.md 等） */
+  contextFiles: Array<{ path: string; bytes: number }>
+  systemPromptSource: string | null
+  appendSystemPromptSources: string[]
+  /** 已注册工具（含未激活的） */
+  tools: ToolInfoLite[]
+}
+
+/** 项目信任只读快照 */
+export interface TrustSnapshot {
+  cwd: string
+  /** 已保存的决定；null 表示无保存记录 */
+  decision: boolean | null
+  /** 保存该决定的 trust.json 路径 */
+  savedPath: string | null
+  /** 是否探测到受保护的项目资源（决定是否需要信任） */
+  requiresTrust: boolean
+  /** 探测到的受保护项目资源 */
+  protectedResources: string[]
+  /** 当前运行中的 loader 是否按已信任加载 */
+  loaderTrusted: boolean
+  defaultProjectTrust: ProjectTrustDefault
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -257,6 +448,12 @@ export interface PiForgeApi {
   // 设置
   setApiKey(apiKey: string): Promise<void>
   getCredentialStatus(): Promise<CredentialStatus>
+  /** 读取设置、资源与信任的只读快照（设置中心用） */
+  readSettings(): Promise<SettingsSnapshot | null>
+  readResources(): Promise<ResourcesSnapshot | null>
+  readTrust(): Promise<TrustSnapshot | null>
+  /** 应用与运行时的版本信息（关于页） */
+  getAppInfo(): Promise<AppInfo>
 
   // 工作区
   getWorkspace(): Promise<string | null>

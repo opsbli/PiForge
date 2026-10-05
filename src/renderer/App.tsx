@@ -5,7 +5,6 @@ import { Sidebar } from '@renderer/components/layout/Sidebar'
 import { CenterStage } from '@renderer/components/layout/CenterStage'
 import { RightPanel } from '@renderer/components/layout/RightPanel'
 import { ApprovalDialog } from '@renderer/components/Approval/ApprovalDialog'
-import { SettingsDialog } from '@renderer/components/Settings/SettingsDialog'
 import { MemoryPanel } from '@renderer/components/Memory/MemoryPanel'
 import { SessionTree } from '@renderer/components/SessionTree/SessionTree'
 import { TracePanel } from '@renderer/components/Trace/TracePanel'
@@ -28,7 +27,6 @@ export default function App(): JSX.Element {
   const resizeRightPanel = useLayoutStore((s) => s.resizeRightPanel)
   const resetRightPanelWidth = useLayoutStore((s) => s.resetRightPanelWidth)
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const [traceOpen, setTraceOpen] = useState(false)
@@ -65,13 +63,11 @@ export default function App(): JSX.Element {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <TitleBar onOpenSettings={() => setSettingsOpen(true)} />
-
+      <TitleBar />
       <div className="flex min-h-0 flex-1">
         {!sidebarCollapsed && (
           <>
             <Sidebar
-              onOpenSettings={() => setSettingsOpen(true)}
               onOpenSessionTree={() => setTreeOpen(true)}
               onOpenMemory={() => setMemoryOpen(true)}
               onOpenTrace={() => setTraceOpen(true)}
@@ -94,7 +90,6 @@ export default function App(): JSX.Element {
       </div>
 
       <ApprovalDialog />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
       <SessionTree open={treeOpen} onClose={() => setTreeOpen(false)} />
       <TracePanel open={traceOpen} onClose={() => setTraceOpen(false)} />

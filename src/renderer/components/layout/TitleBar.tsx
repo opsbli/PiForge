@@ -20,9 +20,10 @@ import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 import { basename, shortenPath } from '@renderer/lib/format'
 
 /** 自定义标题栏：拖拽区 + 工作区切换 + 主题/设置 + 窗口控制 */
-export function TitleBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
+export function TitleBar(): JSX.Element {
   const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
+  const openSettings = useLayoutStore((s) => s.openSettings)
   const workspace = useWorkspaceStore((s) => s.workspace)
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
   const resolvedTheme = useThemeStore((s) => s.resolved)
@@ -86,7 +87,7 @@ export function TitleBar({ onOpenSettings }: { onOpenSettings: () => void }): JS
         </Tooltip>
 
         <Tooltip label="设置" side="bottom">
-          <Button variant="ghost" size="icon-sm" aria-label="设置" onClick={onOpenSettings}>
+          <Button variant="ghost" size="icon-sm" aria-label="设置" onClick={openSettings}>
             <Settings />
           </Button>
         </Tooltip>

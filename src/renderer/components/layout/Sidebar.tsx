@@ -14,20 +14,15 @@ import { basename } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
 
 export interface SidebarProps {
-  onOpenSettings: () => void
   onOpenSessionTree: () => void
   onOpenMemory: () => void
   onOpenTrace: () => void
 }
 
 /** 左栏：新建会话 + 主导航 + 项目会话列表 + 底部状态区 */
-export function Sidebar({
-  onOpenSettings,
-  onOpenSessionTree,
-  onOpenMemory,
-  onOpenTrace
-}: SidebarProps): JSX.Element {
+export function Sidebar({ onOpenSessionTree, onOpenMemory, onOpenTrace }: SidebarProps): JSX.Element {
   const width = useLayoutStore((s) => s.sidebarWidth)
+  const openSettings = useLayoutStore((s) => s.openSettings)
   const workspace = useWorkspaceStore((s) => s.workspace)
   const newSession = useCostStore((s) => s.newSession)
 
@@ -67,7 +62,7 @@ export function Sidebar({
           <NavItem
             icon={ShieldCheck}
             label="沙箱"
-            onClick={onOpenSettings}
+            onClick={openSettings}
             trailing={
               <Badge tone={isDocker ? 'success' : 'warning'} className="text-[10px]">
                 {isDocker ? 'Docker' : '本地'}
@@ -81,7 +76,7 @@ export function Sidebar({
         <ProjectGroup />
       </ScrollArea>
 
-      <SidebarFooter onOpenSettings={onOpenSettings} />
+      <SidebarFooter onOpenSettings={openSettings} />
     </aside>
   )
 }

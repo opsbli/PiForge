@@ -18,7 +18,7 @@ export function SandboxSettings(): JSX.Element {
   const isDocker = status?.mode === 'docker'
 
   return (
-    <div className="mt-4 border-t border-border pt-3">
+    <div className="px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
         <ShieldCheck className="size-3.5 text-muted-foreground" />
         执行沙箱

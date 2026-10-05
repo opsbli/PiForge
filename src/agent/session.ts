@@ -1,6 +1,7 @@
-import type { AgentSession } from '@earendil-works/pi-coding-agent'
+import type { AgentSession, ResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
-import type { SessionSummary, SessionHistoryMessage } from '../shared/ipc-types'
+import type { ResourcesSnapshot, SessionSummary, SessionHistoryMessage, ToolInfoLite } from '../shared/ipc-types'
+import { buildResourcesSnapshot } from './resources-service'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
 import { createMemoryExtension } from './memory'
 import { builtinTools } from './tools'
@@ -29,6 +30,8 @@ export interface SessionHandle {
   sessionFile(): string | undefined
   /** 读取当前分支的历史消息（切换/恢复会话后回显用） */
   history(): SessionHistoryMessage[]
+  /** 读取已加载资源快照（扩展 / skill / 上下文文件 / 诊断） */
+  resources(): ResourcesSnapshot
   /** 读取会话树（简化结构） */
   getTree(): TreeEntry[]
   /** 当前 leaf 节点 id */
@@ -49,6 +52,11 @@ const DEFAULT_MODEL = process.env.PI_MODEL_ID ?? 'deepseek-flash'
 export interface CreateSessionOptions {
   cwd: string
   bridge: ApprovalBridge
+  /**
+   * 与 agent 进程共享的设置管理器。
+   * 必须由调用方创建并复用同一实例：设置中心写入后，运行中的会话要能立即读到新值。
+   */
+  settingsManager: SettingsManager
   /** 已有会话文件路径：传入则恢复该会话；不传则新建 */
   resumePath?: string
 }
@@ -63,7 +71,7 @@ export interface CreateSessionOptions {
  * 需要临时会话时应传入 SessionManager.inMemory()。
  */
 export async function createSession(options: CreateSessionOptions): Promise<SessionHandle> {
-  const { cwd, bridge, resumePath } = options
+  const { cwd, bridge, settingsManager, resumePath } = options
   const sdk = await import('@earendil-works/pi-coding-agent')
 
   // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
@@ -81,7 +89,6 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
   }
 
   const agentDir = sdk.getAgentDir()
-  const settingsManager = sdk.SettingsManager.create(cwd, agentDir)
 
   // 注入危险操作审批扩展（内联，不走 ~/.pi/agent/extensions/）
   const resourceLoader = new sdk.DefaultResourceLoader({
@@ -113,7 +120,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     sessionManager
   })
 
-  return wrapSession(session, `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
+  return wrapSession(session, `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`, resourceLoader)
 }
 
 /** 列出历史会话 */
@@ -132,7 +139,11 @@ export async function listSessions(cwd: string): Promise<
   }))
 }
 
-function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
+function wrapSession(
+  session: AgentSession,
+  modelLabel: string,
+  resourceLoader: ResourceLoader
+): SessionHandle {
   return {
     async send(text: string): Promise<void> {
       await session.prompt(text)
@@ -169,6 +180,10 @@ function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
 
     history(): SessionHistoryMessage[] {
       return buildHistory(session.sessionManager)
+    },
+
+    resources(): ResourcesSnapshot {
+      return buildResourcesSnapshot(resourceLoader, collectTools(session))
     },
 
     getTree(): TreeEntry[] {
@@ -243,6 +258,40 @@ function previewOf(content: unknown): string {
 
 /** 单条工具结果保留的最大字符数（避免历史回显把巨型输出拉进渲染进程） */
 const HISTORY_RESULT_LIMIT = 4000
+
+interface RawToolInfo {
+  name: string
+  description?: string
+  exposure?: string
+  sourceInfo?: { path?: string }
+}
+
+/** MCP 工具名为 `mcp__<server>__<tool>`（见 SDK 的 docs/mcp.md），服务器名从这里取出 */
+function mcpServerOf(toolName: string): string | null {
+  const prefix = 'mcp__'
+  if (!toolName.startsWith(prefix)) return null
+  const rest = toolName.slice(prefix.length)
+  const separator = rest.indexOf('__')
+  return separator > 0 ? rest.slice(0, separator) : rest
+}
+
+function collectTools(session: AgentSession): ToolInfoLite[] {
+  const active = new Set(session.getActiveToolNames())
+  const tools = session.getAllTools() as unknown as RawToolInfo[]
+
+  return tools.map((tool) => {
+    const server = mcpServerOf(tool.name)
+    const builtin = Boolean(tool.sourceInfo?.path?.startsWith('builtin:'))
+    return {
+      name: tool.name,
+      description: tool.description ?? '',
+      origin: server ? 'mcp' : builtin ? 'builtin' : 'extension',
+      server,
+      exposure: tool.exposure ?? '',
+      active: active.has(tool.name)
+    }
+  })
+}
 
 interface RawTreeNode {
   entry: {

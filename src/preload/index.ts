@@ -54,6 +54,11 @@ const api: PiForgeApi = {
 
   getCredentialStatus: () => ipcRenderer.invoke(IPC.CREDENTIAL_STATUS),
 
+  readSettings: () => ipcRenderer.invoke(IPC.SETTINGS_READ),
+  readResources: () => ipcRenderer.invoke(IPC.RESOURCES_READ),
+  readTrust: () => ipcRenderer.invoke(IPC.TRUST_READ),
+  getAppInfo: () => ipcRenderer.invoke(IPC.APP_INFO),
+
   // ---- 工作区 ----
   getWorkspace: () => ipcRenderer.invoke(IPC.WORKSPACE_GET),
   selectWorkspace: () => ipcRenderer.invoke(IPC.WORKSPACE_SELECT),

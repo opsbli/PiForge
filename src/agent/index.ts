@@ -1,7 +1,22 @@
 import { createSession, listSessions, type SessionHandle, type TreeEntry } from './session'
 import type { ApprovalRequest } from './approval'
+import {
+  buildSettingsSnapshot,
+  emptySettingsSnapshot,
+  settingsPaths
+} from './settings-service'
+import { emptyResourcesSnapshot } from './resources-service'
+import { buildTrustSnapshot, emptyTrustSnapshot } from './trust-service'
+import type { ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
-import type { SessionSummary, SessionListItem, SessionHistoryMessage } from '../shared/ipc-types'
+import type {
+  ResourcesSnapshot,
+  SessionSummary,
+  SessionListItem,
+  SessionHistoryMessage,
+  SettingsSnapshot,
+  TrustSnapshot
+} from '../shared/ipc-types'
 
 /**
  * Agent Utility Process 入口。
@@ -18,6 +33,9 @@ type InboundMessage =
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
   | { type: 'session_messages'; requestId: string }
+  | { type: 'settings_read'; requestId: string }
+  | { type: 'resources_read'; requestId: string }
+  | { type: 'trust_read'; requestId: string }
   | { type: 'tree_get'; requestId: string }
   | {
       type: 'tree_navigate'
@@ -33,6 +51,9 @@ type OutboundMessage =
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
+  | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
+  | { type: 'resources_snapshot'; requestId: string; snapshot: ResourcesSnapshot }
+  | { type: 'trust_snapshot'; requestId: string; snapshot: TrustSnapshot }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -40,6 +61,16 @@ const port = process.parentPort
 const workspace = process.env.PIFORGE_WORKSPACE ?? process.cwd()
 
 let session: SessionHandle | null = null
+/**
+ * 跨会话共享的 SDK 对象。
+ * SettingsManager 必须只有一个实例：设置中心写入后，运行中的会话要能立即读到新值
+ * （AgentSession 持有的是同一个引用）。
+ */
+let settingsManager: SettingsManager | null = null
+let trustStore: ProjectTrustStore | null = null
+let sdkRequiresTrust: ((cwd: string) => boolean) | null = null
+let sdkVersion: string | null = null
+let agentDir = ''
 const pendingApprovals = new Map<string, (approved: boolean) => void>()
 let approvalSeq = 0
 
@@ -90,10 +121,26 @@ port.on('message', (event) => {
   runSessionOp(() => handle(message))
 })
 
+/** 加载 SDK 并初始化共享对象（SDK 是纯 ESM，本进程为 CJS，只能动态 import） */
+async function bootstrap(): Promise<void> {
+  const sdk = await import('@earendil-works/pi-coding-agent')
+  agentDir = sdk.getAgentDir()
+  settingsManager = sdk.SettingsManager.create(workspace, agentDir)
+  trustStore = new sdk.ProjectTrustStore(agentDir)
+  sdkRequiresTrust = sdk.hasTrustRequiringProjectResources
+  sdkVersion = sdk.VERSION ?? null
+}
+
 /** 建立会话并挂上事件流 */
 async function openSession(resumePath?: string): Promise<void> {
+  if (!settingsManager) throw new Error('设置管理器尚未就绪')
   session?.dispose()
-  session = await createSession({ cwd: workspace, bridge: approvalBridge, resumePath })
+  session = await createSession({
+    cwd: workspace,
+    bridge: approvalBridge,
+    settingsManager,
+    resumePath
+  })
   session.onEvent((event) => post({ type: 'event', event }))
 }
 
@@ -167,6 +214,45 @@ async function handle(message: InboundMessage): Promise<void> {
     return
   }
 
+  if (message.type === 'settings_read') {
+    post({
+      type: 'settings_snapshot',
+      requestId: message.requestId,
+      snapshot: settingsManager
+        ? buildSettingsSnapshot(settingsManager, workspace, agentDir, { sdk: sdkVersion })
+        : emptySettingsSnapshot(workspace, agentDir)
+    })
+    return
+  }
+
+  if (message.type === 'resources_read') {
+    post({
+      type: 'resources_snapshot',
+      requestId: message.requestId,
+      snapshot: session ? session.resources() : emptyResourcesSnapshot()
+    })
+    return
+  }
+
+  if (message.type === 'trust_read') {
+    post({
+      type: 'trust_snapshot',
+      requestId: message.requestId,
+      snapshot:
+        settingsManager && trustStore
+          ? buildTrustSnapshot({
+              cwd: workspace,
+              sdkRequiresTrust: sdkRequiresTrust ? sdkRequiresTrust(workspace) : false,
+              decision: trustStore.get(workspace),
+              savedPath: settingsPaths(workspace, agentDir).trustFile,
+              loaderTrusted: settingsManager.isProjectTrusted(),
+              defaultProjectTrust: settingsManager.getDefaultProjectTrust()
+            })
+          : emptyTrustSnapshot(workspace)
+    })
+    return
+  }
+
   if (message.type === 'tree_get') {
     if (!session) {
       post({ type: 'error', message: '会话未就绪' })
@@ -211,6 +297,7 @@ async function handle(message: InboundMessage): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  await bootstrap()
   await openSession()
   post({ type: 'ready' })
 }

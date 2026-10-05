@@ -6,6 +6,7 @@ import { Tooltip } from '@renderer/components/ui/tooltip'
 import { ChatPanel } from '@renderer/components/Chat/ChatPanel'
 import { CostDashboard } from '@renderer/components/Cost/CostDashboard'
 import { Editor } from '@renderer/components/Editor/Editor'
+import { SettingsView } from '@renderer/components/Settings/SettingsView'
 import { TerminalPanel } from '@renderer/components/Terminal/TerminalPanel'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useLayoutStore, type MainView } from '@renderer/stores/layout-store'
@@ -25,6 +26,8 @@ export function CenterStage(): JSX.Element {
   const setMainView = useLayoutStore((s) => s.setMainView)
   const rightPanelOpen = useLayoutStore((s) => s.rightPanelOpen)
   const toggleRightPanel = useLayoutStore((s) => s.toggleRightPanel)
+  const settingsOpen = useLayoutStore((s) => s.settingsOpen)
+  const closeSettings = useLayoutStore((s) => s.closeSettings)
 
   const openFilePath = useWorkspaceStore((s) => s.openFilePath)
   const sessions = useCostStore((s) => s.sessions)
@@ -45,7 +48,12 @@ export function CenterStage(): JSX.Element {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-panel">
-      <header className="flex h-9 shrink-0 items-center gap-3 border-b border-border px-2">
+      <header
+        className={cn(
+          'flex h-9 shrink-0 items-center gap-3 border-b border-border px-2',
+          settingsOpen && 'hidden'
+        )}
+      >
         <Segmented value={mainView} onValueChange={setMainView} options={VIEW_OPTIONS} />
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={title}>
           {title}
@@ -66,14 +74,18 @@ export function CenterStage(): JSX.Element {
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <ViewSlot visible={mainView === 'chat'}>
-          <ChatPanel active={mainView === 'chat'} />
+        <ViewSlot visible={!settingsOpen && mainView === 'chat'}>
+          <ChatPanel active={!settingsOpen && mainView === 'chat'} />
         </ViewSlot>
-        <ViewSlot visible={mainView === 'editor'}>
-          <Editor active={mainView === 'editor'} />
+        <ViewSlot visible={!settingsOpen && mainView === 'editor'}>
+          <Editor active={!settingsOpen && mainView === 'editor'} />
         </ViewSlot>
-        <ViewSlot visible={mainView === 'terminal'}>
-          <TerminalPanel active={mainView === 'terminal'} />
+        <ViewSlot visible={!settingsOpen && mainView === 'terminal'}>
+          <TerminalPanel active={!settingsOpen && mainView === 'terminal'} />
+        </ViewSlot>
+        {/* 设置作为覆盖视图：上面的三个槽位保持挂载，否则会销毁终端 PTY 与会话状态 */}
+        <ViewSlot visible={settingsOpen}>
+          <SettingsView onExit={closeSettings} />
         </ViewSlot>
       </div>
     </main>
@@ -85,5 +97,9 @@ export function CenterStage(): JSX.Element {
  * 终端持有 PTY 会话、编辑器持有 Monaco 实例，卸载会直接销毁它们。
  */
 function ViewSlot({ visible, children }: { visible: boolean; children: ReactNode }): JSX.Element {
-  return <div className={cn('absolute inset-0', !visible && 'hidden')}>{children}</div>
+  return (
+    <div className={cn('absolute inset-0', !visible && 'hidden')} aria-hidden={!visible}>
+      {children}
+    </div>
+  )
 }
