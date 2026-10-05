@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { registerAgentIpc } from './ipc'
+import { registerAgentIpc, registerSettingsIpc } from './ipc'
 import { agentHost } from './agent-host'
 
 function createWindow(): void {
@@ -30,7 +30,8 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   registerAgentIpc()
-  // 启动 Agent Utility Process（阶段五会把 workspace 改为用户授权的工作区）
+  registerSettingsIpc()
+  // 启动 Agent Utility Process（阶段六会改为用户选择的工作区）
   agentHost.start(process.env.PIFORGE_WORKSPACE ?? process.cwd())
   createWindow()
 

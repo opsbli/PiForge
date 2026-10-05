@@ -32,7 +32,11 @@ const api: PiForgeApi = {
   },
 
   respondApproval: (callId: string, approved: boolean): Promise<void> =>
-    ipcRenderer.invoke(IPC.APPROVAL_RESPONSE, { callId, approved })
+    ipcRenderer.invoke(IPC.APPROVAL_RESPONSE, { callId, approved }),
+
+  setApiKey: (apiKey: string): Promise<void> => ipcRenderer.invoke(IPC.SET_API_KEY, apiKey),
+
+  getCredentialStatus: () => ipcRenderer.invoke(IPC.CREDENTIAL_STATUS)
 }
 
 contextBridge.exposeInMainWorld('piforge', api)

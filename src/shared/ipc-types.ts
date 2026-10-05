@@ -13,7 +13,11 @@ export const IPC = {
   /** main → renderer：危险操作审批请求 */
   APPROVAL_REQUEST: 'approval:request',
   /** renderer → main：审批结果 */
-  APPROVAL_RESPONSE: 'approval:response'
+  APPROVAL_RESPONSE: 'approval:response',
+  /** renderer → main：写入 API Key（safeStorage 加密） */
+  SET_API_KEY: 'settings:set-api-key',
+  /** renderer → main：凭据状态 */
+  CREDENTIAL_STATUS: 'settings:credential-status'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -45,6 +49,16 @@ export interface ApprovalRequest {
   rule?: string
 }
 
+/** 凭据状态（设置界面展示用） */
+export interface CredentialStatus {
+  /** 是否已保存加密的 API Key */
+  hasStoredKey: boolean
+  /** 当前系统 safeStorage 是否可用 */
+  encryptionAvailable: boolean
+  /** 是否正在使用环境变量里的 Key */
+  usingEnvVar: boolean
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   sendPrompt(text: string): Promise<void>
@@ -55,4 +69,8 @@ export interface PiForgeApi {
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void
   /** 回传审批结果 */
   respondApproval(callId: string, approved: boolean): Promise<void>
+  /** 写入 API Key（加密存储） */
+  setApiKey(apiKey: string): Promise<void>
+  /** 读取凭据状态 */
+  getCredentialStatus(): Promise<CredentialStatus>
 }

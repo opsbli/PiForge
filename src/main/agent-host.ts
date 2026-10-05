@@ -90,6 +90,12 @@ export class AgentHost {
     this.ready = false
   }
 
+  /** 重启 Agent 进程（例如 API Key 更新后） */
+  restart(workspace: string): void {
+    this.dispose()
+    this.start(workspace)
+  }
+
   private handle(message: AgentOutbound): void {
     switch (message.type) {
       case 'ready': {
