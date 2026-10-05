@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from 'react'
 import {
   ArrowLeft,
   BookOpen,
+  Boxes,
   Info,
   Layers,
   Package,
@@ -28,6 +29,7 @@ import { GeneralSection } from './sections/GeneralSection'
 import { McpSection } from './sections/McpSection'
 import { ModelSection } from './sections/ModelSection'
 import { PackagesSection } from './sections/PackagesSection'
+import { SandboxSection } from './sections/SandboxSection'
 import { SkillsSection } from './sections/SkillsSection'
 import { ToolsSection } from './sections/ToolsSection'
 import { TrustSection } from './sections/TrustSection'
@@ -36,6 +38,7 @@ type SectionId =
   | 'general'
   | 'model'
   | 'tools'
+  | 'sandbox'
   | 'context'
   | 'extensions'
   | 'packages'
@@ -48,6 +51,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
   { id: 'general', label: '通用', icon: SlidersHorizontal },
   { id: 'model', label: '模型', icon: Sparkles },
   { id: 'tools', label: '工具', icon: Wrench },
+  { id: 'sandbox', label: '沙箱', icon: Boxes },
   { id: 'context', label: '会话与上下文', icon: Layers },
   { id: 'extensions', label: '扩展', icon: Puzzle },
   { id: 'packages', label: 'Packages', icon: Package },
@@ -206,6 +210,8 @@ function renderSection(id: SectionId): JSX.Element {
       return <ModelSection />
     case 'tools':
       return <ToolsSection />
+    case 'sandbox':
+      return <SandboxSection />
     case 'context':
       return <ContextSection />
     case 'extensions':

@@ -33,6 +33,7 @@ type AgentOutbound =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -60,6 +61,7 @@ export class AgentHost {
   private sessionId: string | null = null
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
+  private sessionListAllWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
   private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
   private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
@@ -72,6 +74,20 @@ export class AgentHost {
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
+  /** agent 就绪等待者（启动/重启后需要等进程起来再操作） */
+  private readyWaiters: Array<() => void> = []
+
+  /** 等待 agent 进程就绪；已就绪时立即返回 */
+  whenReady(): Promise<void> {
+    if (this.ready) return Promise.resolve()
+    return new Promise((resolve) => this.readyWaiters.push(resolve))
+  }
+
+  private flushReadyWaiters(): void {
+    const waiters = this.readyWaiters
+    this.readyWaiters = []
+    for (const resolve of waiters) resolve()
+  }
 
   /** 启动 Agent Utility Process（构建产物为 out/main/agent.js） */
   start(workspace: string): void {
@@ -88,8 +104,13 @@ export class AgentHost {
 
     child.on('message', (message) => this.handle(message as AgentOutbound))
     child.on('exit', (code) => {
+      // restart 会先 kill 旧进程再启动新进程，旧进程的 exit 是迟到的：
+      // 只有当前子进程才处理，否则会把新进程引用清空
+      if (this.child !== child) return
       this.ready = false
       this.child = null
+      // 进程退出时释放等待者，避免调用方永久挂起（后续调用会拿到空结果）
+      this.flushReadyWaiters()
       this.broadcast({ type: 'error', message: `Agent 进程退出（code=${code}）` })
     })
   }
@@ -128,7 +149,7 @@ export class AgentHost {
     })
   }
 
-  /** 列出历史会话 */
+  /** 列出历史会话（当前工作区） */
   listSessions(): Promise<SessionListItem[]> {
     return new Promise((resolve) => {
       if (!this.child) {
@@ -138,6 +159,19 @@ export class AgentHost {
       const requestId = `req-${++this.requestSeq}`
       this.sessionListWaiters.set(requestId, resolve)
       this.child.postMessage({ type: 'session_list', requestId })
+    })
+  }
+
+  /** 跨项目列出全部历史会话（每条带 cwd，供渲染层按项目分组） */
+  listAllSessions(): Promise<SessionListItem[]> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve([])
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      this.sessionListAllWaiters.set(requestId, resolve)
+      this.child.postMessage({ type: 'session_list_all', requestId })
     })
   }
 
@@ -314,6 +348,7 @@ export class AgentHost {
     switch (message.type) {
       case 'ready': {
         this.ready = true
+        this.flushReadyWaiters()
         const queued = this.pendingPrompts
         this.pendingPrompts = []
         for (const text of queued) this.prompt(text)
@@ -373,6 +408,14 @@ export class AgentHost {
         const waiter = this.sessionListWaiters.get(message.requestId)
         if (waiter) {
           this.sessionListWaiters.delete(message.requestId)
+          waiter(message.sessions)
+        }
+        break
+      }
+      case 'session_list_all_result': {
+        const waiter = this.sessionListAllWaiters.get(message.requestId)
+        if (waiter) {
+          this.sessionListAllWaiters.delete(message.requestId)
           waiter(message.sessions)
         }
         break

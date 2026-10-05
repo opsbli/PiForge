@@ -1,16 +1,13 @@
-import { useEffect, type JSX, type ReactNode } from 'react'
-import { Activity, Brain, FolderOpen, GitBranch, Plus, Settings, ShieldCheck } from 'lucide-react'
+import { type JSX, type ReactNode } from 'react'
+import { Activity, Brain, GitBranch, Plus, Settings } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Separator } from '@renderer/components/ui/separator'
 import { ProjectGroup } from '@renderer/components/layout/ProjectGroup'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useLayoutStore } from '@renderer/stores/layout-store'
-import { useSandboxStore } from '@renderer/stores/sandbox-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
-import { basename } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
 
 export interface SidebarProps {
@@ -19,20 +16,12 @@ export interface SidebarProps {
   onOpenTrace: () => void
 }
 
-/** 左栏：新建会话 + 主导航 + 项目会话列表 + 底部状态区 */
+/** 左栏：新建会话 + 主导航 + 项目列表 + 底部状态区 */
 export function Sidebar({ onOpenSessionTree, onOpenMemory, onOpenTrace }: SidebarProps): JSX.Element {
   const width = useLayoutStore((s) => s.sidebarWidth)
   const openSettings = useLayoutStore((s) => s.openSettings)
   const workspace = useWorkspaceStore((s) => s.workspace)
   const newSession = useCostStore((s) => s.newSession)
-
-  const sandbox = useSandboxStore((s) => s.status)
-  const refreshSandbox = useSandboxStore((s) => s.refresh)
-  useEffect(() => {
-    void refreshSandbox()
-  }, [refreshSandbox])
-
-  const isDocker = sandbox?.mode === 'docker'
 
   return (
     <aside
@@ -59,16 +48,6 @@ export function Sidebar({ onOpenSessionTree, onOpenMemory, onOpenTrace }: Sideba
           <NavItem icon={GitBranch} label="会话树" onClick={onOpenSessionTree} />
           <NavItem icon={Brain} label="项目记忆" onClick={onOpenMemory} />
           <NavItem icon={Activity} label="可观测性" onClick={onOpenTrace} />
-          <NavItem
-            icon={ShieldCheck}
-            label="沙箱"
-            onClick={openSettings}
-            trailing={
-              <Badge tone={isDocker ? 'success' : 'warning'} className="text-[10px]">
-                {isDocker ? 'Docker' : '本地'}
-              </Badge>
-            }
-          />
         </nav>
 
         <Separator className="my-2" />
@@ -109,31 +88,16 @@ function NavItem({
   )
 }
 
+/**
+ * 底部状态区：只保留设置入口。
+ * 「打开项目」已并入「项目」分组头部操作（见 ProjectGroup）。
+ */
 function SidebarFooter({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
-  const workspace = useWorkspaceStore((s) => s.workspace)
-  const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
-
-  const openFolder = async (): Promise<void> => {
-    const selected = await window.piforge.selectWorkspace()
-    if (selected) setWorkspace(selected)
-  }
-
   return (
-    <div className="shrink-0 border-t border-sidebar-border p-2">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => void openFolder()}
-          title={workspace ?? '未选择工作区'}
-          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          <FolderOpen className="size-3.5 shrink-0" />
-          <span className="truncate">{workspace ? basename(workspace) : '未选择工作区'}</span>
-        </button>
-        <Button variant="ghost" size="icon-sm" aria-label="设置" title="设置" onClick={onOpenSettings}>
-          <Settings />
-        </Button>
-      </div>
+    <div className="flex shrink-0 items-center justify-end border-t border-sidebar-border p-2">
+      <Button variant="ghost" size="icon-sm" aria-label="设置" title="设置" onClick={onOpenSettings}>
+        <Settings />
+      </Button>
     </div>
   )
 }

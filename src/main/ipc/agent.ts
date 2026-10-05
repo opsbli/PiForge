@@ -44,6 +44,14 @@ export function registerAgentIpc(): void {
     return agentHost.listSessions()
   })
 
+  ipcMain.handle(IPC.SESSION_LIST_ALL, async () => {
+    return agentHost.listAllSessions()
+  })
+
+  ipcMain.handle(IPC.AGENT_WAIT_READY, async (): Promise<void> => {
+    return agentHost.whenReady()
+  })
+
   ipcMain.handle(IPC.SESSION_MESSAGES, async () => {
     return agentHost.getSessionMessages()
   })

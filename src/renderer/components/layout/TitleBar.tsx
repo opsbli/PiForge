@@ -1,9 +1,8 @@
 import { useEffect, useState, type JSX } from 'react'
 import {
-  ChevronDown,
   Copy,
   Cpu,
-  FolderOpen,
+  Folder,
   Minus,
   Moon,
   PanelLeft,
@@ -15,24 +14,19 @@ import {
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip } from '@renderer/components/ui/tooltip'
 import { useLayoutStore } from '@renderer/stores/layout-store'
+import { useProjectsStore } from '@renderer/stores/projects-store'
 import { useThemeStore } from '@renderer/stores/theme-store'
-import { useWorkspaceStore } from '@renderer/stores/workspace-store'
-import { basename, shortenPath } from '@renderer/lib/format'
 
-/** 自定义标题栏：拖拽区 + 工作区切换 + 主题/设置 + 窗口控制 */
+/** 自定义标题栏：拖拽区 + 当前项目 + 主题/设置 + 窗口控制 */
 export function TitleBar(): JSX.Element {
   const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
   const openSettings = useLayoutStore((s) => s.openSettings)
-  const workspace = useWorkspaceStore((s) => s.workspace)
-  const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
+  const projects = useProjectsStore((s) => s.projects)
+  const activeProjectId = useProjectsStore((s) => s.activeProjectId)
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
   const resolvedTheme = useThemeStore((s) => s.resolved)
   const toggleTheme = useThemeStore((s) => s.toggle)
-
-  const openFolder = async (): Promise<void> => {
-    const selected = await window.piforge.selectWorkspace()
-    if (selected) setWorkspace(selected)
-  }
 
   return (
     <header className="app-drag flex h-10 shrink-0 items-center gap-1.5 border-b border-border bg-sidebar px-2">
@@ -58,18 +52,16 @@ export function TitleBar(): JSX.Element {
         <span className="text-xs font-semibold tracking-tight text-foreground">PiForge</span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => void openFolder()}
-        title={workspace ?? '未选择工作区'}
-        className="app-no-drag ml-1 flex min-w-0 max-w-[38%] items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      {/* 当前项目：项目切换已归到侧栏「项目」面板，这里只做展示 */}
+      <div
+        className="ml-1 flex min-w-0 max-w-[38%] items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
+        title={activeProject?.path ?? '未选择项目'}
       >
-        <FolderOpen className="size-3.5 shrink-0" />
+        <Folder className="size-3.5 shrink-0" />
         <span className="truncate">
-          {workspace ? basename(workspace) : '选择工作区'}
+          {activeProject?.name ?? '未选择项目'}
         </span>
-        <ChevronDown className="size-3 shrink-0 opacity-60" />
-      </button>
+      </div>
 
       {/* 拖拽热区 */}
       <div className="min-w-2 flex-1" />

@@ -172,20 +172,42 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
   return wrapSession(session, `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`, resourceLoader)
 }
 
-/** 列出历史会话 */
+/** 列出历史会话（当前工作目录） */
 export async function listSessions(cwd: string): Promise<
-  Array<{ id: string; path: string; name?: string; messageCount: number; modified: string; firstMessage: string }>
+  Array<{ id: string; path: string; name?: string; cwd: string; messageCount: number; modified: string; firstMessage: string }>
 > {
   const sdk = await import('@earendil-works/pi-coding-agent')
   const infos = await sdk.SessionManager.list(cwd)
-  return infos.map((info) => ({
+  return infos.map(toSessionItem)
+}
+
+/** 跨工作目录列出全部历史会话（每项带 cwd，供 UI 按项目分组） */
+export async function listAllSessions(): Promise<
+  Array<{ id: string; path: string; name?: string; cwd: string; messageCount: number; modified: string; firstMessage: string }>
+> {
+  const sdk = await import('@earendil-works/pi-coding-agent')
+  const infos = await sdk.SessionManager.listAll()
+  return infos.map(toSessionItem)
+}
+
+function toSessionItem(info: {
+  id: string
+  path: string
+  name?: string
+  cwd?: string
+  messageCount: number
+  modified: Date
+  firstMessage: string
+}): { id: string; path: string; name?: string; cwd: string; messageCount: number; modified: string; firstMessage: string } {
+  return {
     id: info.id,
     path: info.path,
     name: info.name,
+    cwd: info.cwd ?? '',
     messageCount: info.messageCount,
     modified: info.modified.toISOString(),
     firstMessage: info.firstMessage
-  }))
+  }
 }
 
 function wrapSession(

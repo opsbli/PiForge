@@ -11,14 +11,12 @@ import { TracePanel } from '@renderer/components/Trace/TracePanel'
 import { useApprovalStore } from '@renderer/stores/approval-store'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useLayoutStore } from '@renderer/stores/layout-store'
+import { useProjectsStore } from '@renderer/stores/projects-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
 export default function App(): JSX.Element {
   const setPending = useApprovalStore((s) => s.setPending)
-  const setWorkspace = useWorkspaceStore((s) => s.setWorkspace)
   const newSession = useCostStore((s) => s.newSession)
-  const refreshSessions = useCostStore((s) => s.refreshSessions)
-  const refreshSummary = useCostStore((s) => s.refreshSummary)
 
   const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
   const rightPanelOpen = useLayoutStore((s) => s.rightPanelOpen)
@@ -37,16 +35,10 @@ export default function App(): JSX.Element {
     return off
   }, [setPending])
 
-  // 启动时读取当前工作区
+  // 启动时载入项目列表（同时同步工作区、会话列表与成本摘要）
   useEffect(() => {
-    void window.piforge.getWorkspace().then(setWorkspace)
-  }, [setWorkspace])
-
-  // 启动后拉一次会话列表与成本摘要
-  useEffect(() => {
-    void refreshSessions()
-    void refreshSummary()
-  }, [refreshSessions, refreshSummary])
+    void useProjectsStore.getState().load()
+  }, [])
 
   // Ctrl/Cmd+N 新建会话（未选工作区时不响应）
   useEffect(() => {

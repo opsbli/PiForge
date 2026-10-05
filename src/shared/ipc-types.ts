@@ -37,6 +37,16 @@ export const IPC = {
   WORKSPACE_GET: 'workspace:get',
   WORKSPACE_SELECT: 'workspace:select',
 
+  // 项目（多项目管理）
+  PROJECT_STATE: 'project:state',
+  PROJECT_CREATE_FOLDER: 'project:create-folder',
+  PROJECT_CREATE_BLANK: 'project:create-blank',
+  PROJECT_RENAME: 'project:rename',
+  PROJECT_REMOVE: 'project:remove',
+  PROJECT_ACTIVATE: 'project:activate',
+  PROJECT_CHANGED: 'project:changed',
+  AGENT_WAIT_READY: 'agent:wait-ready',
+
   // 文件系统
   FS_LIST: 'fs:list',
   FS_READ: 'fs:read',
@@ -69,6 +79,7 @@ export const IPC = {
 
   // 会话管理
   SESSION_LIST: 'session:list',
+  SESSION_LIST_ALL: 'session:list-all',
   SESSION_NEW: 'session:new',
   SESSION_SWITCH: 'session:switch',
   SESSION_MESSAGES: 'session:messages',
@@ -115,6 +126,8 @@ export interface SessionListItem {
   messageCount: number
   modified: string
   firstMessage: string
+  /** 会话启动时的工作目录；用于跨项目分组。旧会话可能为空字符串 */
+  cwd?: string
 }
 
 /**
@@ -652,6 +665,44 @@ export interface UpdaterStatus {
   message?: string
 }
 
+/**
+ * 项目类型。
+ * - `local`：从本地文件夹创建，`path` 指向用户目录，删除项目只移除登记、不动文件。
+ * - `blank`：应用管理的空白项目，目录位于 userData 下，删除时一并清理。
+ */
+export type ProjectKind = 'local' | 'blank'
+
+/** 一个已登记的项目 */
+export interface ProjectRecord {
+  id: string
+  /** 展示名，可重命名（不改变磁盘目录名） */
+  name: string
+  /** 工作目录绝对路径 */
+  path: string
+  kind: ProjectKind
+  createdAt: string
+  lastOpenedAt: string
+}
+
+/** 项目列表状态（主进程为唯一事实来源） */
+export interface ProjectState {
+  projects: ProjectRecord[]
+  activeProjectId: string | null
+}
+
+export interface ProjectCreateBlankRequest {
+  name?: string
+}
+
+export interface ProjectRenameRequest {
+  id: string
+  name: string
+}
+
+export interface ProjectIdRequest {
+  id: string
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -660,10 +711,14 @@ export interface PiForgeApi {
   getSessionSummary(): Promise<SessionSummary>
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
   listSessions(): Promise<SessionListItem[]>
+  /** 跨项目列出全部历史会话（按 cwd 分组用） */
+  listAllSessions(): Promise<SessionListItem[]>
   newSession(): Promise<void>
   switchSession(sessionPath: string): Promise<void>
   /** 读取当前会话活动分支的历史消息 */
   getSessionMessages(): Promise<SessionHistoryMessage[]>
+  /** 等待 agent 进程就绪（重启工作区后使用） */
+  waitAgentReady(): Promise<void>
 
   // 审批
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void
@@ -705,6 +760,18 @@ export interface PiForgeApi {
   // 工作区
   getWorkspace(): Promise<string | null>
   selectWorkspace(): Promise<string | null>
+
+  // 项目（多项目管理）
+  getProjectState(): Promise<ProjectState>
+  /** 弹出文件夹选择框创建本地项目；取消返回 null */
+  createProjectFromFolder(): Promise<ProjectState | null>
+  createBlankProject(request?: ProjectCreateBlankRequest): Promise<ProjectState>
+  renameProject(request: ProjectRenameRequest): Promise<ProjectState>
+  /** 删除项目登记（本地项目不动磁盘文件，空白项目清理其目录） */
+  removeProject(request: ProjectIdRequest): Promise<ProjectState>
+  activateProject(request: ProjectIdRequest): Promise<ProjectState>
+  /** 项目列表变化（主进程广播） */
+  onProjectChanged(cb: (state: ProjectState) => void): () => void
 
   // 文件系统
   listDir(dirPath: string): Promise<FileNode[]>

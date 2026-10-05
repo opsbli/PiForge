@@ -1,4 +1,4 @@
-import { createSession, listSessions, type SessionHandle, type TreeEntry } from './session'
+import { createSession, listAllSessions, listSessions, type SessionHandle, type TreeEntry } from './session'
 import type { ApprovalRequest } from './approval'
 import {
   buildSettingsSnapshot,
@@ -51,6 +51,7 @@ type InboundMessage =
   | { type: 'summary'; requestId: string }
   | { type: 'approval_response'; requestId: string; approved: boolean }
   | { type: 'session_list'; requestId: string }
+  | { type: 'session_list_all'; requestId: string }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
   | { type: 'session_messages'; requestId: string }
@@ -87,6 +88,7 @@ type OutboundMessage =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -146,10 +148,21 @@ const approvalBridge = {
  */
 let sessionOps: Promise<void> = Promise.resolve()
 
+/**
+ * 共享对象（SettingsManager / PackageManager）的初始化 Promise。
+ * 重启后消息可能先于 bootstrap 完成到达，因此各类会话请求要先等它落定。
+ */
+let bootstrapPromise: Promise<void> = Promise.resolve()
+
 function runSessionOp(task: () => Promise<void>): void {
-  sessionOps = sessionOps.then(task).catch((err) => {
-    post({ type: 'error', message: `会话操作失败：${String(err)}` })
-  })
+  sessionOps = sessionOps
+    .then(async () => {
+      await bootstrapPromise
+      await task()
+    })
+    .catch((err) => {
+      post({ type: 'error', message: `会话操作失败：${String(err)}` })
+    })
 }
 
 const IMMEDIATE_TYPES: ReadonlySet<InboundMessage['type']> = new Set([
@@ -288,6 +301,16 @@ async function handle(message: InboundMessage): Promise<void> {
       post({ type: 'session_list_result', requestId: message.requestId, sessions })
     } catch (err) {
       post({ type: 'error', message: `列出会话失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_list_all') {
+    try {
+      const sessions = await listAllSessions()
+      post({ type: 'session_list_all_result', requestId: message.requestId, sessions })
+    } catch (err) {
+      post({ type: 'error', message: `列出全部会话失败：${String(err)}` })
     }
     return
   }
@@ -637,8 +660,16 @@ async function handle(message: InboundMessage): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  await bootstrap()
-  await openSession()
+  bootstrapPromise = bootstrap()
+  await bootstrapPromise
+  // 初始会话排进同一条串行链，避免与并发的 session_new / session_switch 交叉
+  const initial = sessionOps
+    .then(() => openSession())
+    .catch((err) => {
+      post({ type: 'error', message: `初始化会话失败：${String(err)}` })
+    })
+  sessionOps = initial
+  await initial
   post({ type: 'ready' })
 }
 

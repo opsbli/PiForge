@@ -1,10 +1,9 @@
 import type { JSX } from 'react'
-import { SandboxSettings } from '@renderer/components/Sandbox/SandboxSettings'
 import { useSettingsStore } from '@renderer/stores/settings-store'
 import { SettingsFieldRow } from '../SettingsFieldRow'
 import { ChipList, NoticeBlock, SectionShell, SettingsGroup, SettingsRow, ValueText } from '../SettingsLayout'
 
-/** 工具：工具集与 codemode 可写；工具清单与沙箱为实际状态 */
+/** 工具：工具集与 codemode 可写；工具清单为实际状态 */
 export function ToolsSection(): JSX.Element {
   const resources = useSettingsStore((s) => s.resources)
 
@@ -57,12 +56,8 @@ export function ToolsSection(): JSX.Element {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="执行沙箱">
-        <SandboxSettings />
-      </SettingsGroup>
-
       <NoticeBlock>
-        工具集的变更需要重载 agent（保存后右上角会出现「立即重载」）。沙箱模式切换沿用原有能力，即时生效。
+        工具集的变更需要重载 agent（保存后右上角会出现「立即重载」）。沙箱相关设置在左侧「沙箱」分类里。
       </NoticeBlock>
     </SectionShell>
   )

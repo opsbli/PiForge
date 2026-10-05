@@ -7,6 +7,7 @@ import type {
   TerminalExitEvent,
   MemoryEntry,
   PackageProgress,
+  ProjectState,
   UpdaterStatus
 } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
@@ -25,11 +26,14 @@ const api: PiForgeApi = {
   getSessionSummary: () => ipcRenderer.invoke(IPC.SESSION_SUMMARY),
 
   listSessions: () => ipcRenderer.invoke(IPC.SESSION_LIST),
+  listAllSessions: () => ipcRenderer.invoke(IPC.SESSION_LIST_ALL),
   newSession: (): Promise<void> => ipcRenderer.invoke(IPC.SESSION_NEW),
   switchSession: (sessionPath: string): Promise<void> =>
     ipcRenderer.invoke(IPC.SESSION_SWITCH, sessionPath),
 
   getSessionMessages: () => ipcRenderer.invoke(IPC.SESSION_MESSAGES),
+
+  waitAgentReady: (): Promise<void> => ipcRenderer.invoke(IPC.AGENT_WAIT_READY),
 
   onAgentEvent: (cb: (event: AgentEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: AgentEvent): void => cb(payload)
@@ -102,6 +106,21 @@ const api: PiForgeApi = {
   // ---- 工作区 ----
   getWorkspace: () => ipcRenderer.invoke(IPC.WORKSPACE_GET),
   selectWorkspace: () => ipcRenderer.invoke(IPC.WORKSPACE_SELECT),
+
+  // ---- 项目（多项目管理） ----
+  getProjectState: () => ipcRenderer.invoke(IPC.PROJECT_STATE),
+  createProjectFromFolder: () => ipcRenderer.invoke(IPC.PROJECT_CREATE_FOLDER),
+  createBlankProject: (request) => ipcRenderer.invoke(IPC.PROJECT_CREATE_BLANK, request),
+  renameProject: (request) => ipcRenderer.invoke(IPC.PROJECT_RENAME, request),
+  removeProject: (request) => ipcRenderer.invoke(IPC.PROJECT_REMOVE, request),
+  activateProject: (request) => ipcRenderer.invoke(IPC.PROJECT_ACTIVATE, request),
+  onProjectChanged: (cb) => {
+    const listener = (_event: unknown, payload: ProjectState): void => cb(payload)
+    ipcRenderer.on(IPC.PROJECT_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.PROJECT_CHANGED, listener)
+    }
+  },
 
   // ---- 文件系统 ----
   listDir: (dirPath: string) => ipcRenderer.invoke(IPC.FS_LIST, dirPath),

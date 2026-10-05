@@ -9,10 +9,11 @@ import {
   registerSandboxIpc,
   registerTraceIpc,
   registerWindowIpc,
+  registerProjectIpc,
   disposeTerminals
 } from './ipc'
 import { agentHost } from './agent-host'
-import { setWorkspace } from './workspace'
+import { initProjects } from './projects'
 import { stopContainer } from './sandbox'
 import { openTraceStore, closeTraceStore } from './trace-store'
 import { setupAutoUpdater } from './updater'
@@ -61,7 +62,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerAgentIpc()
   registerSettingsIpc()
   registerFsIpc()
@@ -70,11 +71,12 @@ app.whenReady().then(() => {
   registerSandboxIpc()
   registerTraceIpc()
   registerWindowIpc()
+  registerProjectIpc()
   setupAutoUpdater()
-  // 启动时默认把当前目录作为工作区（用户可随时用「打开文件夹」切换）
-  setWorkspace(process.env.PIFORGE_WORKSPACE ?? process.cwd())
   openTraceStore()
-  agentHost.start(process.env.PIFORGE_WORKSPACE ?? process.cwd())
+  // 初始化多项目注册表：首个项目默认取当前目录（可用 PIFORGE_WORKSPACE 覆盖）
+  const activePath = await initProjects(process.env.PIFORGE_WORKSPACE ?? process.cwd())
+  agentHost.start(activePath)
   createWindow()
 
   app.on('activate', () => {
