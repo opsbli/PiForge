@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { registerAgentIpc } from './ipc'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -27,6 +28,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerAgentIpc()
   createWindow()
 
   app.on('activate', () => {
