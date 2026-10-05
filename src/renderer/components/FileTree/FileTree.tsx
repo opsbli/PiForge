@@ -242,8 +242,12 @@ function NewEntryInput({
       return
     }
     try {
-      await window.piforge.createEntry(parentDir, trimmed, isDirectory)
+      const node = await window.piforge.createEntry(parentDir, trimmed, isDirectory)
       await onDone()
+      // 新建文件后自动打开，方便直接编辑
+      if (!isDirectory) {
+        useWorkspaceStore.getState().openFile(node.path, '')
+      }
     } catch (err) {
       setError(String(err))
     }

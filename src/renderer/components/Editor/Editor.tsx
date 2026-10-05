@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import * as monaco from 'monaco-editor'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
@@ -10,16 +10,22 @@ export function Editor(): JSX.Element {
   const openFilePath = useWorkspaceStore((s) => s.openFilePath)
   const dirty = useWorkspaceStore((s) => s.dirty)
   const markSaved = useWorkspaceStore((s) => s.markSaved)
+  const [feedback, setFeedback] = useState<string | null>(null)
 
   /** 保存当前文件（从 store 读最新内容，避免闭包过期） */
   const save = useCallback(async (): Promise<void> => {
     const state = useWorkspaceStore.getState()
-    if (!state.openFilePath) return
+    if (!state.openFilePath) {
+      setFeedback('没有打开的文件')
+      return
+    }
     try {
       await window.piforge.writeFile(state.openFilePath, state.content)
       markSaved()
+      setFeedback('已保存')
+      window.setTimeout(() => setFeedback(null), 2000)
     } catch (err) {
-      window.alert(`保存失败：${String(err)}`)
+      setFeedback(`保存失败：${String(err)}`)
     }
   }, [markSaved])
 
@@ -86,17 +92,20 @@ export function Editor(): JSX.Element {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="truncate text-xs text-muted-foreground">
-          {openFilePath ?? '未打开文件'}
+          {openFilePath ?? '未打开文件（点击左侧文件打开）'}
           {dirty ? ' •未保存' : ''}
         </span>
-        <button
-          className="rounded border border-border px-2 py-0.5 text-xs hover:bg-accent disabled:opacity-40"
-          disabled={!openFilePath || !dirty}
-          onClick={() => void save()}
-          title="保存（Ctrl+S）"
-        >
-          保存
-        </button>
+        <div className="flex items-center gap-2">
+          {feedback && <span className="text-xs text-emerald-400">{feedback}</span>}
+          <button
+            className="rounded border border-border px-2 py-0.5 text-xs hover:bg-accent disabled:opacity-40"
+            disabled={!openFilePath}
+            onClick={() => void save()}
+            title="保存（Ctrl+S）"
+          >
+            保存
+          </button>
+        </div>
       </div>
       <div ref={containerRef} className="min-h-0 flex-1" />
     </div>
