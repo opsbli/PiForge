@@ -2,6 +2,7 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type { SessionSummary } from '../shared/ipc-types'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
+import { builtinTools } from './tools'
 
 export interface SessionHandle {
   /** 发送一条用户 prompt */
@@ -80,6 +81,9 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     model,
     settingsManager,
     resourceLoader,
+    // 静态内置工具（Git 集成 / 项目信息 / TODO 搜索 / 行数统计）
+    customTools: builtinTools,
+    // 默认持久化（非 inMemory）
     sessionManager
   })
 
