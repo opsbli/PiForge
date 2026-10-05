@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { ScrollText, Sparkles, SendHorizontal, User } from 'lucide-react'
-import { Button } from '@renderer/components/ui/button'
+import { ScrollText, Sparkles, User } from 'lucide-react'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { MarkdownText } from '@renderer/components/Chat/MarkdownText'
+import { ComposerToolbar } from '@renderer/components/Chat/ComposerToolbar'
 import { ToolCallCard } from '@renderer/components/ToolCall/ToolCallCard'
 import { useChatStore, type ChatMessage } from '@renderer/stores/chat-store'
-import { cn } from '@renderer/lib/utils'
+import { useComposerStore } from '@renderer/stores/composer-store'
 
 /** 中栏「对话」视图：消息流 + 输入区 */
 export function ChatPanel({ active = true }: { active?: boolean }): JSX.Element {
@@ -133,6 +133,8 @@ function Composer({
 }): JSX.Element {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const attachments = useComposerStore((s) => s.attachments)
+  const clearAttachments = useComposerStore((s) => s.clearAttachments)
 
   // 随内容自适应高度（上限 160px，超出后内部滚动）
   useEffect(() => {
@@ -142,12 +144,19 @@ function Composer({
     element.style.height = `${Math.min(element.scrollHeight, 160)}px`
   }, [value])
 
-  const canSend = !disabled && value.trim().length > 0
+  const canSend = !disabled && (value.trim().length > 0 || attachments.length > 0)
 
   const submit = (): void => {
     if (!canSend) return
-    onSend(value.trim())
+    const text = value.trim()
+    // 附件以路径引用形式追加到下一条消息，模型可据此调用文件工具
+    const withAttachments =
+      attachments.length > 0
+        ? `${text}${text ? '\n\n' : ''}附件（本地路径）：\n${attachments.map((p) => `- ${p}`).join('\n')}`
+        : text
+    onSend(withAttachments)
     setValue('')
+    clearAttachments()
   }
 
   return (
@@ -158,7 +167,7 @@ function Composer({
           rows={1}
           value={value}
           disabled={disabled}
-          placeholder={disabled ? '正在生成…' : '输入 prompt，Enter 发送，Shift+Enter 换行'}
+          placeholder={disabled ? '正在生成…' : '输入消息，Enter 发送，Shift+Enter 换行'}
           className="max-h-40 border-0 bg-transparent px-3 py-2 focus-visible:ring-0"
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -168,21 +177,7 @@ function Composer({
             }
           }}
         />
-        <div className="flex items-center justify-between gap-2 px-2 pb-2">
-          <span className="truncate text-[10px] text-muted-foreground">
-            Enter 发送 · Shift+Enter 换行
-          </span>
-          <Button
-            size="sm"
-            variant="default"
-            className={cn(!canSend && 'opacity-50')}
-            disabled={!canSend}
-            onClick={submit}
-          >
-            <SendHorizontal />
-            发送
-          </Button>
-        </div>
+        <ComposerToolbar canSend={canSend} onSend={submit} />
       </div>
     </div>
   )

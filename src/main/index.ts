@@ -11,6 +11,7 @@ import {
   registerWindowIpc,
   registerProjectIpc,
   registerProfileIpc,
+  registerDialogIpc,
   disposeTerminals
 } from './ipc'
 import { agentHost } from './agent-host'
@@ -74,6 +75,7 @@ app.whenReady().then(async () => {
   registerWindowIpc()
   registerProjectIpc()
   registerProfileIpc()
+  registerDialogIpc()
   setupAutoUpdater()
   openTraceStore()
   // 初始化多项目注册表：首个项目默认取当前目录（可用 PIFORGE_WORKSPACE 覆盖）

@@ -9,6 +9,7 @@ import { MemoryPanel } from '@renderer/components/Memory/MemoryPanel'
 import { SessionTree } from '@renderer/components/SessionTree/SessionTree'
 import { TracePanel } from '@renderer/components/Trace/TracePanel'
 import { useApprovalStore } from '@renderer/stores/approval-store'
+import { useComposerStore } from '@renderer/stores/composer-store'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useLayoutStore } from '@renderer/stores/layout-store'
 import { useProfileStore } from '@renderer/stores/profile-store'
@@ -44,6 +45,11 @@ export default function App(): JSX.Element {
   // 启动时载入本机个人资料（头像 / 昵称）
   useEffect(() => {
     void useProfileStore.getState().load()
+  }, [])
+
+  // 启动时载入输入框工具栏状态（审批模式 / 思考档位 / 模型 / 上下文用量）
+  useEffect(() => {
+    void useComposerStore.getState().load()
   }, [])
 
   // Ctrl/Cmd+N 新建会话（未选工作区时不响应）

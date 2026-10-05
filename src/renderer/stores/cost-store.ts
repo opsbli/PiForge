@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SessionSummary, SessionListItem } from '@shared/ipc-types'
 import { useChatStore } from '@renderer/stores/chat-store'
+import { useComposerStore } from '@renderer/stores/composer-store'
 
 interface CostState {
   summary: SessionSummary | null
@@ -41,11 +42,13 @@ export const useCostStore = create<CostState>((set, get) => ({
     // （跨 store 调用集中在此，避免三个入口（侧栏/分组/快捷键）各自遗漏）
     await useChatStore.getState().loadHistory()
     await Promise.all([get().refreshSummary(), get().refreshSessions()])
+    await useComposerStore.getState().refreshMeta()
   },
 
   switchSession: async (sessionPath) => {
     await window.piforge.switchSession(sessionPath)
     await useChatStore.getState().loadHistory()
     await Promise.all([get().refreshSummary(), get().refreshSessions()])
+    await useComposerStore.getState().refreshMeta()
   }
 }))

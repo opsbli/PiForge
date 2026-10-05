@@ -36,6 +36,14 @@ const api: PiForgeApi = {
 
   waitAgentReady: (): Promise<void> => ipcRenderer.invoke(IPC.AGENT_WAIT_READY),
 
+  // ---- 会话控制（输入框工具栏）----
+  getSessionMeta: () => ipcRenderer.invoke(IPC.SESSION_META),
+  setThinkingLevel: (level: string) => ipcRenderer.invoke(IPC.SESSION_SET_THINKING, level),
+  setModel: (request) => ipcRenderer.invoke(IPC.SESSION_SET_MODEL, request),
+  listModels: () => ipcRenderer.invoke(IPC.MODEL_LIST),
+  setApprovalMode: (mode) => ipcRenderer.invoke(IPC.APPROVAL_SET_MODE, mode),
+  pickAttachments: (kind) => ipcRenderer.invoke(IPC.DIALOG_PICK_ATTACHMENTS, kind),
+
   onAgentEvent: (cb: (event: AgentEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: AgentEvent): void => cb(payload)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)

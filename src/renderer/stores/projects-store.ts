@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ProjectRecord, ProjectState, SessionListItem } from '@shared/ipc-types'
 import { useChatStore } from '@renderer/stores/chat-store'
+import { useComposerStore } from '@renderer/stores/composer-store'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
@@ -133,5 +134,8 @@ async function syncRuntime(): Promise<void> {
     useCostStore.getState().refreshSessions(),
     useProjectsStore.getState().refreshSessions()
   ])
+  // 新工作区会重建 agent 会话，输入框工具栏的模型 / 上下文用量需重新拉取
+  await useComposerStore.getState().refreshMeta()
+  await useComposerStore.getState().loadModels()
   await useChatStore.getState().loadHistory()
 }

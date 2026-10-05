@@ -2,9 +2,12 @@ import { utilityProcess, type UtilityProcess, BrowserWindow, shell } from 'elect
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
 import type {
+  ApprovalMode,
   SessionSummary,
   SessionListItem,
   SessionHistoryMessage,
+  SessionMeta,
+  ModelListItem,
   SettingsSnapshot,
   SettingsReloadResult,
   SettingsWriteRequest,
@@ -34,6 +37,8 @@ type AgentOutbound =
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
+  | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -62,6 +67,11 @@ export class AgentHost {
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
   private sessionListAllWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
+  private sessionMetaWaiters = new Map<string, (meta: SessionMeta) => void>()
+  private modelListWaiters = new Map<
+    string,
+    (result: { models: ModelListItem[]; current: { providerId: string; modelId: string } }) => void
+  >()
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
   private settingsWaiters = new Map<string, (snapshot: SettingsSnapshot) => void>()
   private writeWaiters = new Map<string, (result: SettingsWriteResult) => void>()
@@ -173,6 +183,34 @@ export class AgentHost {
       this.sessionListAllWaiters.set(requestId, resolve)
       this.child.postMessage({ type: 'session_list_all', requestId })
     })
+  }
+
+  /** 当前会话的模型 / 思考档位 / 上下文用量 */
+  getSessionMeta(): Promise<SessionMeta | null> {
+    return this.request({ type: 'session_meta' }, this.sessionMetaWaiters)
+  }
+
+  /** 可用模型清单 + 当前选择 */
+  listModels(): Promise<{
+    models: ModelListItem[]
+    current: { providerId: string; modelId: string }
+  } | null> {
+    return this.request({ type: 'model_list' }, this.modelListWaiters)
+  }
+
+  /** 设置思考档位（下一轮或立即可见） */
+  setThinkingLevel(level: string): void {
+    this.child?.postMessage({ type: 'session_set_thinking', level })
+  }
+
+  /** 切换当前会话模型 */
+  setModel(providerId: string, modelId: string): void {
+    this.child?.postMessage({ type: 'session_set_model', providerId, modelId })
+  }
+
+  /** 设置审批模式：auto 完全自动放行，ask 危险操作弹窗 */
+  setApprovalMode(mode: ApprovalMode): void {
+    this.child?.postMessage({ type: 'approval_mode', mode })
   }
 
   /**
@@ -417,6 +455,22 @@ export class AgentHost {
         if (waiter) {
           this.sessionListAllWaiters.delete(message.requestId)
           waiter(message.sessions)
+        }
+        break
+      }
+      case 'session_meta_result': {
+        const waiter = this.sessionMetaWaiters.get(message.requestId)
+        if (waiter) {
+          this.sessionMetaWaiters.delete(message.requestId)
+          waiter(message.meta)
+        }
+        break
+      }
+      case 'model_list_result': {
+        const waiter = this.modelListWaiters.get(message.requestId)
+        if (waiter) {
+          this.modelListWaiters.delete(message.requestId)
+          waiter({ models: message.models, current: message.current })
         }
         break
       }

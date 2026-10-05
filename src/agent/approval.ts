@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionFactory } from '@earendil-works/pi-coding-agent'
 import { assessToolCall } from '../shared/safety'
-import type { ApprovalRequest } from '../shared/ipc-types'
+import type { ApprovalMode, ApprovalRequest } from '../shared/ipc-types'
 
 export type { ApprovalRequest }
 
@@ -18,13 +18,18 @@ export interface ApprovalBridge {
  */
 export function createApprovalExtension(
   workspace: string,
-  bridge: ApprovalBridge
+  bridge: ApprovalBridge,
+  /** 当前审批模式：auto = 完全自动放行，ask = 危险操作弹窗（默认） */
+  getMode: () => ApprovalMode = () => 'ask'
 ): ExtensionFactory {
   return (pi: ExtensionAPI): void => {
     pi.on('tool_call', async (event): Promise<{ block: boolean; reason: string } | void> => {
       const e = event as unknown as { toolName?: string; toolCallId?: string; input?: unknown }
       const toolName = String(e.toolName ?? '')
       if (!toolName) return
+
+      // 完全自动：所有工具调用直接允许，不做危险判定也不弹窗
+      if (getMode() === 'auto') return
 
       const verdict = assessToolCall(toolName, e.input, workspace)
       if (!verdict.dangerous) return

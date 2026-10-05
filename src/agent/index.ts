@@ -15,18 +15,21 @@ import {
 import { emptyResourcesSnapshot } from './resources-service'
 import { listPackages, toPackageProgress } from './packages-service'
 import { buildTrustSnapshot, emptyTrustSnapshot } from './trust-service'
-import type { PackageManager, ProjectTrustStore, SettingsManager } from '@earendil-works/pi-coding-agent'
+import type { PackageManager, ProjectTrustStore, ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type {
+  ApprovalMode,
   McpConfigResult,
   McpConfigView,
   McpPatchRequest,
   McpScopeNameRequest,
   McpUpsertRequest,
+  ModelListItem,
   PackageInfo,
   PackageProgress,
   PackageResult,
   ResourcesSnapshot,
+  SessionMeta,
   SessionSummary,
   SessionListItem,
   SessionHistoryMessage,
@@ -52,6 +55,11 @@ type InboundMessage =
   | { type: 'approval_response'; requestId: string; approved: boolean }
   | { type: 'session_list'; requestId: string }
   | { type: 'session_list_all'; requestId: string }
+  | { type: 'session_meta'; requestId: string }
+  | { type: 'session_set_thinking'; level: string }
+  | { type: 'session_set_model'; providerId: string; modelId: string }
+  | { type: 'model_list'; requestId: string }
+  | { type: 'approval_mode'; mode: ApprovalMode }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
   | { type: 'session_messages'; requestId: string }
@@ -89,6 +97,8 @@ type OutboundMessage =
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
+  | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -115,6 +125,11 @@ let session: SessionHandle | null = null
 let settingsManager: SettingsManager | null = null
 let trustStore: ProjectTrustStore | null = null
 let packageManager: PackageManager | null = null
+let modelRuntime: ModelRuntime | null = null
+/** 当前选中的模型；跨会话保留，新建/切换会话时沿用 */
+const modelSelection = { providerId: 'deepseek', modelId: process.env.PI_MODEL_ID ?? 'deepseek-flash' }
+/** 审批模式：auto = 完全自动放行，ask = 危险操作弹窗（默认） */
+let approvalMode: ApprovalMode = 'ask'
 let sdkRequiresTrust: ((cwd: string) => boolean) | null = null
 let sdkVersion: string | null = null
 let agentDir = ''
@@ -188,6 +203,10 @@ async function bootstrap(): Promise<void> {
   sdkRequiresTrust = sdk.hasTrustRequiringProjectResources
   sdkVersion = sdk.VERSION ?? null
 
+  // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
+  // 但内置 DeepSeek provider 的 API Key 走环境变量 DEEPSEEK_API_KEY。
+  modelRuntime = await sdk.ModelRuntime.create({ allowModelNetwork: false })
+
   // 不传 builtinExtensions：PiForge 不加载内置扩展，声明它们会造成误解
   packageManager = new sdk.DefaultPackageManager({ cwd: workspace, agentDir, settingsManager })
   packageManager.setProgressCallback((event) => {
@@ -198,11 +217,15 @@ async function bootstrap(): Promise<void> {
 /** 建立会话并挂上事件流 */
 async function openSession(resumePath?: string): Promise<void> {
   if (!settingsManager) throw new Error('设置管理器尚未就绪')
+  if (!modelRuntime) throw new Error('模型运行时尚未就绪')
   session?.dispose()
   session = await createSession({
     cwd: workspace,
     bridge: approvalBridge,
     settingsManager,
+    runtime: modelRuntime,
+    selection: { ...modelSelection },
+    approvalMode: () => approvalMode,
     resumePath,
     // MCP 的 OAuth 登录由扩展触发；这里把 URL 转给主进程用系统浏览器打开
     openUrl: (url) => post({ type: 'mcp_open_url', url })
@@ -263,6 +286,33 @@ function mcpConfigResult(error?: string): McpConfigResult {
   return { ok: !error, error, config: readMcpConfig(mcpContext()) }
 }
 
+/** 可用模型清单（来自共享的模型运行时） */
+function listModels(): ModelListItem[] {
+  if (!modelRuntime) return []
+  try {
+    return modelRuntime.getModels().map((model) => ({
+      providerId: String(model.provider),
+      id: model.id,
+      name: model.name,
+      reasoning: Boolean(model.reasoning)
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** 当前会话的模型 / 思考档位 / 上下文用量 */
+function currentSessionMeta(): SessionMeta {
+  const usage = session?.contextUsage()
+  return {
+    providerId: modelSelection.providerId,
+    modelId: modelSelection.modelId,
+    thinkingLevel: session ? session.thinkingLevel() : '',
+    availableThinkingLevels: session ? session.availableThinkingLevels() : [],
+    contextUsage: usage ? { ...usage } : null
+  }
+}
+
 async function handle(message: InboundMessage): Promise<void> {
   if (message.type === 'prompt') {
     if (!session) {
@@ -312,6 +362,54 @@ async function handle(message: InboundMessage): Promise<void> {
     } catch (err) {
       post({ type: 'error', message: `列出全部会话失败：${String(err)}` })
     }
+    return
+  }
+
+  if (message.type === 'session_meta') {
+    post({ type: 'session_meta_result', requestId: message.requestId, meta: currentSessionMeta() })
+    return
+  }
+
+  if (message.type === 'model_list') {
+    post({
+      type: 'model_list_result',
+      requestId: message.requestId,
+      models: listModels(),
+      current: { ...modelSelection }
+    })
+    return
+  }
+
+  if (message.type === 'session_set_thinking') {
+    if (!session) {
+      post({ type: 'error', message: '会话未就绪' })
+      return
+    }
+    try {
+      session.setThinkingLevel(message.level)
+    } catch (err) {
+      post({ type: 'error', message: `设置思考档位失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'session_set_model') {
+    if (!session) {
+      post({ type: 'error', message: '会话未就绪' })
+      return
+    }
+    try {
+      await session.setModel(message.providerId, message.modelId)
+      modelSelection.providerId = message.providerId
+      modelSelection.modelId = message.modelId
+    } catch (err) {
+      post({ type: 'error', message: `切换模型失败：${String(err)}` })
+    }
+    return
+  }
+
+  if (message.type === 'approval_mode') {
+    approvalMode = message.mode
     return
   }
 

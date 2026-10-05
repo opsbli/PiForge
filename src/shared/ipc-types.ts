@@ -91,6 +91,16 @@ export const IPC = {
   SESSION_SWITCH: 'session:switch',
   SESSION_MESSAGES: 'session:messages',
 
+  // 会话控制（输入框工具栏）
+  SESSION_META: 'session:meta',
+  SESSION_SET_THINKING: 'session:set-thinking',
+  SESSION_SET_MODEL: 'session:set-model',
+  MODEL_LIST: 'model:list',
+  APPROVAL_SET_MODE: 'approval:set-mode',
+
+  // 附件选择（输入框工具栏）
+  DIALOG_PICK_ATTACHMENTS: 'dialog:pick-attachments',
+
   // 窗口控制（自定义标题栏）
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
@@ -724,6 +734,33 @@ export interface ProfileNicknameRequest {
   nickname: string
 }
 
+/** 审批模式：auto = 完全自动放行，ask = 危险操作弹窗 */
+export type ApprovalMode = 'auto' | 'ask'
+
+/** 模型清单项（输入框模型选择器） */
+export interface ModelListItem {
+  providerId: string
+  id: string
+  name: string
+  reasoning: boolean
+}
+
+/** 上下文用量（对齐 SDK ContextUsage） */
+export interface ContextUsageView {
+  tokens: number | null
+  contextWindow: number
+  percent: number | null
+}
+
+/** 当前会话的模型 / 思考档位 / 上下文用量 */
+export interface SessionMeta {
+  providerId: string
+  modelId: string
+  thinkingLevel: string
+  availableThinkingLevels: string[]
+  contextUsage: ContextUsageView | null
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -740,6 +777,18 @@ export interface PiForgeApi {
   getSessionMessages(): Promise<SessionHistoryMessage[]>
   /** 等待 agent 进程就绪（重启工作区后使用） */
   waitAgentReady(): Promise<void>
+
+  // 会话控制（输入框工具栏）
+  getSessionMeta(): Promise<SessionMeta>
+  setThinkingLevel(level: string): Promise<void>
+  setModel(request: { providerId: string; modelId: string }): Promise<void>
+  listModels(): Promise<{
+    models: ModelListItem[]
+    current: { providerId: string; modelId: string }
+  }>
+  setApprovalMode(mode: ApprovalMode): Promise<void>
+  /** 选择要附加的文件或文件夹（返回绝对路径；取消返回空数组） */
+  pickAttachments(kind: 'file' | 'folder'): Promise<string[]>
 
   // 审批
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void

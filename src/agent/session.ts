@@ -1,12 +1,14 @@
 import type {
   AgentSession,
+  ContextUsage,
   InlineExtension,
   LoadedMcpConfig,
+  ModelRuntime,
   ResourceLoader,
   SettingsManager
 } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
-import type { ResourcesSnapshot, SessionSummary, SessionHistoryMessage, ToolInfoLite } from '../shared/ipc-types'
+import type { ApprovalMode, ResourcesSnapshot, SessionSummary, SessionHistoryMessage, ToolInfoLite } from '../shared/ipc-types'
 import { buildResourcesSnapshot } from './resources-service'
 import { loadMcpForSdk, mcpExtensionNeeds, mcpPaths } from './mcp-config'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
@@ -50,6 +52,18 @@ export interface SessionHandle {
   getTree(): TreeEntry[]
   /** 当前 leaf 节点 id */
   getLeafId(): string | null
+  /** 上下文用量（未知时 undefined） */
+  contextUsage(): ContextUsage | undefined
+  /** 当前思考档位 */
+  thinkingLevel(): string
+  /** 该模型可用的思考档位 */
+  availableThinkingLevels(): string[]
+  /** 设置思考档位，立即生效 */
+  setThinkingLevel(level: string): void
+  /** 当前模型标识 */
+  currentModel(): { providerId: string; modelId: string }
+  /** 切换模型（provider + model id） */
+  setModel(providerId: string, modelId: string): Promise<void>
   /** 导航到指定节点 */
   navigate(
     targetId: string,
@@ -71,10 +85,19 @@ export interface CreateSessionOptions {
    * 必须由调用方创建并复用同一实例：设置中心写入后，运行中的会话要能立即读到新值。
    */
   settingsManager: SettingsManager
+  /**
+   * 与 agent 进程共享的模型运行时。
+   * 由调用方创建并复用：会话切模型时用它把 provider/modelId 解析成 Model 实例。
+   */
+  runtime: ModelRuntime
+  /** 初始模型选择；不传则用默认 DeepSeek 模型 */
+  selection?: { providerId: string; modelId: string }
   /** 已有会话文件路径：传入则恢复该会话；不传则新建 */
   resumePath?: string
   /** 打开外部 URL（MCP 的 OAuth 登录用）；由 agent 进程转发给主进程 */
   openUrl?: (url: string) => void
+  /** 当前审批模式取值器；auto 时危险工具直接放行 */
+  approvalMode?: () => ApprovalMode
 }
 
 /**
@@ -87,20 +110,22 @@ export interface CreateSessionOptions {
  * 需要临时会话时应传入 SessionManager.inMemory()。
  */
 export async function createSession(options: CreateSessionOptions): Promise<SessionHandle> {
-  const { cwd, bridge, settingsManager, resumePath, openUrl } = options
+  const { cwd, bridge, settingsManager, resumePath, openUrl, runtime, approvalMode } = options
   const sdk = await import('@earendil-works/pi-coding-agent')
 
-  // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
-  // 但内置 DeepSeek provider 的 API Key 走环境变量 DEEPSEEK_API_KEY。
-  const runtime = await sdk.ModelRuntime.create({ allowModelNetwork: false })
-  const model = runtime.getModel(DEFAULT_PROVIDER, DEFAULT_MODEL)
+  // 模型运行时由调用方复用同一实例（切换模型时需要用它解析 Model）
+  const selection = {
+    providerId: options.selection?.providerId ?? DEFAULT_PROVIDER,
+    modelId: options.selection?.modelId ?? DEFAULT_MODEL
+  }
+  const model = runtime.getModel(selection.providerId, selection.modelId)
   if (!model) {
     const available = runtime
-      .getModels(DEFAULT_PROVIDER)
+      .getModels(selection.providerId)
       .map((m) => m.id)
       .join(', ')
     throw new Error(
-      `未找到模型 ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}。该 provider 可用模型：${available || '(无)'}`
+      `未找到模型 ${selection.providerId}/${selection.modelId}。该 provider 可用模型：${available || '(无)'}`
     )
   }
 
@@ -108,7 +133,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
 
   // 注入危险操作审批扩展（内联，不走 ~/.pi/agent/extensions/）
   const extensionFactories: InlineExtension[] = [
-    { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) },
+    { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge, approvalMode) },
     { name: 'piforge-memory', factory: createMemoryExtension(cwd) }
   ]
 
@@ -169,7 +194,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     sessionManager
   })
 
-  return wrapSession(session, `${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`, resourceLoader)
+  return wrapSession(session, runtime, selection, resourceLoader)
 }
 
 /** 列出历史会话（当前工作目录） */
@@ -212,7 +237,8 @@ function toSessionItem(info: {
 
 function wrapSession(
   session: AgentSession,
-  modelLabel: string,
+  runtime: ModelRuntime,
+  selection: { providerId: string; modelId: string },
   resourceLoader: ResourceLoader
 ): SessionHandle {
   return {
@@ -232,7 +258,7 @@ function wrapSession(
       const stats = session.getSessionStats()
       return {
         sessionId: stats.sessionId,
-        model: modelLabel,
+        model: `${selection.providerId}/${selection.modelId}`,
         messageCount: stats.totalMessages,
         tokenUsage: {
           input: stats.tokens.input,
@@ -323,6 +349,38 @@ function wrapSession(
 
     getLeafId(): string | null {
       return session.sessionManager.getLeafId()
+    },
+
+    contextUsage(): ContextUsage | undefined {
+      return session.getContextUsage()
+    },
+
+    thinkingLevel(): string {
+      return String(session.thinkingLevel)
+    },
+
+    availableThinkingLevels(): string[] {
+      try {
+        return session.getAvailableThinkingLevels().map((level) => String(level))
+      } catch {
+        return []
+      }
+    },
+
+    setThinkingLevel(level: string): void {
+      session.setThinkingLevel(level as Parameters<AgentSession['setThinkingLevel']>[0])
+    },
+
+    currentModel(): { providerId: string; modelId: string } {
+      return { ...selection }
+    },
+
+    async setModel(providerId: string, modelId: string): Promise<void> {
+      const next = runtime.getModel(providerId, modelId)
+      if (!next) throw new Error(`未找到模型 ${providerId}/${modelId}`)
+      await session.setModel(next)
+      selection.providerId = providerId
+      selection.modelId = modelId
     },
 
     async navigate(targetId, options) {

@@ -52,6 +52,29 @@ export function registerAgentIpc(): void {
     return agentHost.whenReady()
   })
 
+  ipcMain.handle(IPC.SESSION_META, async () => agentHost.getSessionMeta())
+
+  ipcMain.handle(IPC.MODEL_LIST, async () => agentHost.listModels())
+
+  ipcMain.handle(IPC.SESSION_SET_THINKING, async (_event, level: unknown): Promise<void> => {
+    if (typeof level === 'string' && level) agentHost.setThinkingLevel(level)
+  })
+
+  ipcMain.handle(
+    IPC.SESSION_SET_MODEL,
+    async (_event, request: { providerId?: string; modelId?: string } | undefined): Promise<void> => {
+      const providerId = request?.providerId
+      const modelId = request?.modelId
+      if (typeof providerId === 'string' && typeof modelId === 'string') {
+        agentHost.setModel(providerId, modelId)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.APPROVAL_SET_MODE, async (_event, mode: unknown): Promise<void> => {
+    if (mode === 'auto' || mode === 'ask') agentHost.setApprovalMode(mode)
+  })
+
   ipcMain.handle(IPC.SESSION_MESSAGES, async () => {
     return agentHost.getSessionMessages()
   })
