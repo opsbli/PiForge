@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import * as monaco from 'monaco-editor'
-import { Check, Save } from 'lucide-react'
+import { Check, Eye, PenLine, Save } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
+import { Segmented, type SegmentedOption } from '@renderer/components/ui/segmented'
+import { MarkdownPreview } from '@renderer/components/Editor/MarkdownPreview'
 import { useThemeStore } from '@renderer/stores/theme-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
+import { cn } from '@renderer/lib/utils'
 
-/** Monaco 编辑器：查看/编辑/保存工作区文件 */
+/** 编辑器显示模式：Markdown 文档默认进预览，其余文件固定为编辑 */
+type EditorMode = 'preview' | 'edit'
+
+const MODE_OPTIONS: SegmentedOption<EditorMode>[] = [
+  { value: 'preview', label: '预览', icon: Eye },
+  { value: 'edit', label: '编辑', icon: PenLine }
+]
+
+/** Monaco 编辑器：查看/编辑/保存工作区文件；Markdown 支持预览与编辑切换 */
 export function Editor({ active = true }: { active?: boolean }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
@@ -15,6 +26,10 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
   const markSaved = useWorkspaceStore((s) => s.markSaved)
   const resolvedTheme = useThemeStore((s) => s.resolved)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [mode, setMode] = useState<EditorMode>('edit')
+
+  const markdown = isMarkdownPath(openFilePath)
+  const previewing = markdown && mode === 'preview'
 
   /** 保存当前文件（从 store 读最新内容，避免闭包过期） */
   const save = useCallback(async (): Promise<void> => {
@@ -79,6 +94,13 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
     return () => window.cancelAnimationFrame(id)
   }, [active])
 
+  // 从预览切回编辑：Monaco 容器此前被 visibility 隐藏，主动布局一次以保证尺寸正确
+  useEffect(() => {
+    if (previewing) return
+    const id = window.requestAnimationFrame(() => editorRef.current?.layout())
+    return () => window.cancelAnimationFrame(id)
+  }, [previewing])
+
   // 窗口级 Ctrl/Cmd+S（编辑器未聚焦时也生效）
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
@@ -91,8 +113,10 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [save])
 
-  // 切换文件时更新内容与语言
+  // 切换文件时更新内容与语言，并按文件类型重置显示模式（Markdown 默认预览）
   useEffect(() => {
+    setMode(isMarkdownPath(openFilePath) ? 'preview' : 'edit')
+
     const editor = editorRef.current
     if (!editor) return
     const state = useWorkspaceStore.getState()
@@ -123,6 +147,15 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
           </span>
         )}
 
+        {markdown && (
+          <Segmented
+            value={mode}
+            onValueChange={setMode}
+            options={MODE_OPTIONS}
+            className="shrink-0"
+          />
+        )}
+
         <Button
           variant="outline"
           size="sm"
@@ -136,9 +169,26 @@ export function Editor({ active = true }: { active?: boolean }): JSX.Element {
         </Button>
       </div>
 
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      <div className="relative min-h-0 flex-1">
+        {/* Monaco 容器保持挂载：卸载会销毁编辑器实例与撤销栈，隐藏时改可见性即可 */}
+        <div ref={containerRef} className={cn('absolute inset-0', previewing && 'invisible')} />
+        {previewing && <MarkdownPreviewPane />}
+      </div>
     </div>
   )
+}
+
+/** 预览窗格：独立订阅编辑器内容，避免编辑模式下每次键入都触发 Editor 重渲染 */
+function MarkdownPreviewPane(): JSX.Element {
+  const content = useWorkspaceStore((s) => s.content)
+  return <MarkdownPreview text={content} className="absolute inset-0" />
+}
+
+/** Markdown 文档判定：只有这类文件提供预览模式 */
+function isMarkdownPath(path: string | null): boolean {
+  if (!path) return false
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return ext === 'md' || ext === 'markdown'
 }
 
 function languageOf(path: string): string {

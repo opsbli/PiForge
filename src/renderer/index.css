@@ -222,3 +222,47 @@
   vertical-align: middle;
   accent-color: var(--success);
 }
+
+/*
+ * 编辑器 Markdown 预览排版。
+ * 复用 `.chat-markdown` 的共享规则（代码块、任务列表复选框），
+ * 这里只把标题与正文字号放大一级，使文档阅读观感接近正文而非对话气泡。
+ * 作用域限定在 `.md-preview`：这些选择器靠后声明，可覆盖 `.chat-markdown`
+ * 中同特异性的字号规则，同时不影响对话区。
+ */
+.md-preview h1 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.md-preview h2 {
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+.md-preview h3 {
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.md-preview h4 {
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+}
+
+.md-preview p,
+.md-preview li,
+.md-preview blockquote,
+.md-preview table {
+  font-size: 0.8125rem;
+  line-height: 1.75;
+}
+
+.md-preview th {
+  font-size: 0.75rem;
+}
+
+.md-preview :not(pre) > code,
+.md-preview pre code {
+  font-size: 12px;
+}

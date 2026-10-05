@@ -14,9 +14,12 @@ import { cn } from '@renderer/lib/utils'
  * 安全：react-markdown 默认转义原始 HTML（不经 rehype-raw），CSP 无需放宽；
  * 链接刻意渲染为不可点击的样式化文本，因为 main 进程未注册
  * window.open / will-navigate 处理策略，点击会由 Electron 默认行为接管。
+ *
+ * 该映射同时被编辑器预览（components/Editor/MarkdownPreview.tsx）复用，
+ * 两处只靠外层作用域类区分排版：对话区是 `.chat-markdown`，编辑器是 `.md-preview`。
  */
 
-const COMPONENTS: Components = {
+export const MARKDOWN_COMPONENTS: Components = {
   h1: ({ children }) => (
     <h1 className="text-[15px] font-semibold text-foreground">{children}</h1>
   ),
@@ -108,7 +111,7 @@ export function MarkdownText({ text, className }: { text: string; className?: st
           <ReactMarkdown
             key={`md-${index}`}
             remarkPlugins={[remarkGfm]}
-            components={COMPONENTS}
+            components={MARKDOWN_COMPONENTS}
           >
             {segment.text}
           </ReactMarkdown>
