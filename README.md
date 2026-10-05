@@ -57,3 +57,41 @@ src/
 ├─ renderer/   React UI（Chat/ToolCall/Terminal/Editor/FileTree/Approval/...）
 └─ shared/     IPC 类型与 Agent 事件类型
 ```
+
+
+## 打包与发布
+
+```bash
+pnpm build            # 仅构建 out/
+pnpm build:unpack     # 打包成免安装目录（release/<version>/win-unpacked）
+pnpm dist:win         # Windows NSIS 安装包
+pnpm dist:mac         # macOS dmg
+pnpm dist:linux       # Linux AppImage/deb
+pnpm release          # 构建并发布到 GitHub Releases
+```
+
+### 自动更新（electron-updater）
+
+更新源为 **GitHub Releases**：`opsbli/PiForge`（见 `electron-builder.yml` 的 `publish`）。
+应用打包后启动 5 秒会检查更新；dev 模式跳过。
+
+### 代码签名（需自备证书）
+
+| 平台 | 方式 | 需要的环境变量 |
+|------|------|----------------|
+| Windows | Authenticode | `CSC_LINK`（.pfx 路径或 base64）、`CSC_KEY_PASSWORD` |
+| macOS | Developer ID + 公证 | `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` |
+
+**未提供证书时不签名**（`npmRebuild: false` 已避免原生模块重编译；Windows 会用
+signtool 做 asar 完整性签名，但不附加发行者证书）。
+
+### GitHub Actions
+
+`.github/workflows/build.yml` 在打 `v*` tag 时触发三平台构建并发布到 Releases。
+需在仓库 Secrets 配置上面的签名变量（可选）。
+
+### 一个注意点
+
+`node-pty` 使用 **N-API prebuild**（`prebuilds/<platform>/`），跨 Node/Electron ABI 通用，
+因此 `electron-builder.yml` 里设了 `npmRebuild: false`——否则会触发 node-gyp + MSBuild
+（在缺 Spectre 库的机器上失败）。

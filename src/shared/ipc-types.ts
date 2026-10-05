@@ -146,4 +146,9 @@ export interface PiForgeApi {
   killTerminal(terminalId: string): Promise<void>
   onTerminalData(cb: (event: TerminalDataEvent) => void): () => void
   onTerminalExit(cb: (event: TerminalExitEvent) => void): () => void
+
+  // 自动更新
+  checkForUpdates(): Promise<unknown>
+  downloadUpdate(): Promise<void>
+  installUpdate(): Promise<void>
 }

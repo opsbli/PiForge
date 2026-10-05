@@ -9,6 +9,7 @@ import {
 } from './ipc'
 import { agentHost } from './agent-host'
 import { setWorkspace } from './workspace'
+import { setupAutoUpdater } from './updater'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -40,6 +41,7 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerFsIpc()
   registerTerminalIpc()
+  setupAutoUpdater()
   // 启动时默认把当前目录作为工作区（用户可随时用「打开文件夹」切换）
   setWorkspace(process.env.PIFORGE_WORKSPACE ?? process.cwd())
   agentHost.start(process.env.PIFORGE_WORKSPACE ?? process.cwd())

@@ -1,0 +1,75 @@
+appId: com.opsbli.piforge
+productName: PiForge Desktop
+copyright: Copyright © 2026 opsbli
+
+directories:
+  output: release/${version}
+  buildResources: build
+
+# node-pty 已提供 N-API prebuild（跨 Node/Electron ABI 通用），
+# 禁用 electron-builder 的自动 rebuild（否则会触发 node-gyp + MSBuild）
+npmRebuild: false
+
+# 打包内容：electron-vite 的产出 + package.json（依赖从 node_modules 解析）
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.ts'
+  - '!**/node_modules/**/{test,__tests__,tests,spec,example,examples}/**'
+
+# 原生模块与运行时资源不能进 asar（node-pty 需从磁盘加载 .node）
+asarUnpack:
+  - node_modules/node-pty/**
+  - resources/**
+
+# ---------------- Windows ----------------
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # 代码签名（Authenticode）：通过环境变量注入证书，未提供则跳过签名
+  # CSC_LINK / CSC_KEY_PASSWORD（electron-builder 约定）
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PiForge Desktop
+
+# ---------------- macOS ----------------
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Developer ID 签名：未提供证书时 electron-builder 会跳过（或走 ad-hoc）
+  # 环境变量：CSC_LINK / CSC_KEY_PASSWORD，或用 CSC_NAME 指定证书名
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# ---------------- Linux ----------------
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Development
+  maintainer: opsbli
+
+# ---------------- 自动更新（GitHub Releases） ----------------
+publish:
+  provider: github
+  owner: opsbli
+  repo: PiForge
+  releaseType: release

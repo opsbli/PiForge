@@ -84,7 +84,12 @@ const api: PiForgeApi = {
     return () => {
       ipcRenderer.removeListener(IPC.TERMINAL_EXIT, listener)
     }
-  }
+  },
+
+  // ---- 自动更新 ----
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: (): Promise<void> => ipcRenderer.invoke('updater:download'),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke('updater:install')
 }
 
 contextBridge.exposeInMainWorld('piforge', api)
