@@ -1,6 +1,7 @@
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
 import type { SessionSummary } from '../shared/ipc-types'
+import { createApprovalExtension, type ApprovalBridge } from './approval'
 
 export interface SessionHandle {
   /** 发送一条用户 prompt */
@@ -26,7 +27,7 @@ const DEFAULT_MODEL = process.env.PI_MODEL_ID ?? 'deepseek-flash'
  * 会话模式：默认**持久化**（SessionManager.create(cwd)），便于会话恢复。
  * 需要临时会话时应传入 SessionManager.inMemory()。
  */
-export async function createSession(cwd: string): Promise<SessionHandle> {
+export async function createSession(cwd: string, bridge: ApprovalBridge): Promise<SessionHandle> {
   const sdk = await import('@earendil-works/pi-coding-agent')
 
   // 模型/认证运行时：默认读 agentDir 下的 auth.json 与 models.json，
@@ -43,11 +44,27 @@ export async function createSession(cwd: string): Promise<SessionHandle> {
     )
   }
 
+  const agentDir = sdk.getAgentDir()
+  const settingsManager = sdk.SettingsManager.create(cwd, agentDir)
+
+  // 注入危险操作审批扩展（内联，不走 ~/.pi/agent/extensions/）
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    extensionFactories: [
+      { name: 'piforge-approval', factory: createApprovalExtension(cwd, bridge) }
+    ]
+  })
+  await resourceLoader.reload()
+
   const { session } = await sdk.createAgentSession({
     cwd,
-    agentDir: sdk.getAgentDir(),
+    agentDir,
     modelRuntime: runtime,
     model,
+    settingsManager,
+    resourceLoader,
     // 默认持久化（非 inMemory）
     sessionManager: sdk.SessionManager.create(cwd)
   })

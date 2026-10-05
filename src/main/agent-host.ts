@@ -1,13 +1,15 @@
 import { utilityProcess, type UtilityProcess, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
-import type { SessionSummary } from '../shared/ipc-types'
+import type { SessionSummary, ApprovalRequest } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
+import { resolveApiKey } from './credentials'
 
 type AgentOutbound =
   | { type: 'ready' }
   | { type: 'event'; event: AgentEvent }
   | { type: 'summary'; requestId: string; summary: SessionSummary }
+  | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'error'; message: string }
 
 /**
@@ -21,6 +23,8 @@ export class AgentHost {
   private pendingPrompts: string[] = []
   private requestSeq = 0
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
+  /** agent 侧审批 requestId → UI callId 映射 */
+  private approvalByCallId = new Map<string, string>()
 
   /** 启动 Agent Utility Process（构建产物为 out/main/agent.js） */
   start(workspace: string): void {
@@ -29,8 +33,8 @@ export class AgentHost {
       env: {
         ...process.env,
         PIFORGE_WORKSPACE: workspace,
-        // API Key 走环境变量（阶段五再迁移到 safeStorage）
-        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? ''
+        // API Key：优先 safeStorage 加密存储，其次环境变量
+        DEEPSEEK_API_KEY: resolveApiKey() ?? ''
       }
     })
     this.child = child
@@ -71,6 +75,14 @@ export class AgentHost {
     })
   }
 
+  /** 回传审批结果（renderer → 主进程 → agent） */
+  respondApproval(callId: string, approved: boolean): void {
+    const requestId = this.approvalByCallId.get(callId)
+    if (!requestId) return
+    this.approvalByCallId.delete(callId)
+    this.child?.postMessage({ type: 'approval_response', requestId, approved })
+  }
+
   dispose(): void {
     this.child?.postMessage({ type: 'dispose' })
     this.child?.kill()
@@ -95,6 +107,14 @@ export class AgentHost {
         if (waiter) {
           this.summaryWaiters.delete(message.requestId)
           waiter(message.summary)
+        }
+        break
+      }
+      case 'approval_request': {
+        // 记住 requestId，等 UI 回传时用 callId 反查
+        this.approvalByCallId.set(message.request.callId, message.requestId)
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send(IPC.APPROVAL_REQUEST, message.request)
         }
         break
       }

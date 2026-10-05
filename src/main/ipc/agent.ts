@@ -13,9 +13,27 @@ export function registerAgentIpc(): void {
     agentHost.prompt(prompt)
   })
 
-  ipcMain.handle(IPC.AGENT_APPROVE, async (_event, callId: unknown): Promise<void> => {
-    // 阶段五接入 ApprovalDialog 后再实现真正的审批回传
-    console.log('[ipc] approveToolCall:', callId)
+  ipcMain.handle(
+    IPC.AGENT_APPROVE,
+    async (_event, payload: unknown): Promise<void> => {
+      const { callId, approved } = (payload ?? {}) as {
+        callId?: string
+        approved?: boolean
+      }
+      if (typeof callId === 'string') {
+        agentHost.respondApproval(callId, approved !== false)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.APPROVAL_RESPONSE, async (_event, payload: unknown): Promise<void> => {
+    const { callId, approved } = (payload ?? {}) as {
+      callId?: string
+      approved?: boolean
+    }
+    if (typeof callId === 'string') {
+      agentHost.respondApproval(callId, approved === true)
+    }
   })
 
   ipcMain.handle(IPC.SESSION_SUMMARY, async (): Promise<SessionSummary> => {

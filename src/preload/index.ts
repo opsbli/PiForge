@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-types'
-import type { PiForgeApi } from '../shared/ipc-types'
+import type { PiForgeApi, ApprovalRequest } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 
 /**
@@ -11,7 +11,7 @@ const api: PiForgeApi = {
   sendPrompt: (text: string): Promise<void> => ipcRenderer.invoke(IPC.AGENT_PROMPT, text),
 
   approveToolCall: (callId: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT_APPROVE, callId),
+    ipcRenderer.invoke(IPC.AGENT_APPROVE, { callId, approved: true }),
 
   getSessionSummary: () => ipcRenderer.invoke(IPC.SESSION_SUMMARY),
 
@@ -21,7 +21,18 @@ const api: PiForgeApi = {
     return () => {
       ipcRenderer.removeListener(IPC.AGENT_EVENT, listener)
     }
-  }
+  },
+
+  onApprovalRequest: (cb: (request: ApprovalRequest) => void): (() => void) => {
+    const listener = (_event: unknown, payload: ApprovalRequest): void => cb(payload)
+    ipcRenderer.on(IPC.APPROVAL_REQUEST, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.APPROVAL_REQUEST, listener)
+    }
+  },
+
+  respondApproval: (callId: string, approved: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.APPROVAL_RESPONSE, { callId, approved })
 }
 
 contextBridge.exposeInMainWorld('piforge', api)
