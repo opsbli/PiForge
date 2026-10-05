@@ -3,21 +3,23 @@ import { promises as fs } from 'node:fs'
 import { promisify } from 'node:util'
 import { join, relative } from 'node:path'
 import { Type } from 'typebox'
-import { defineTool } from '@earendil-works/pi-coding-agent'
+// 只做类型导入（TS 擦除）——SDK 是 ESM-only，运行时必须走动态 import
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 
 const execFileAsync = promisify(execFile)
 
-/** 工具统一返回的文本结果 */
-function text(value: string): {
+interface TextResult {
   content: Array<{ type: 'text'; text: string }>
   details: Record<string, never>
-} {
+}
+
+/** 工具统一返回的文本结果 */
+function text(value: string): TextResult {
   return { content: [{ type: 'text', text: value }], details: {} }
 }
 
 /** 1. git_status：查看工作区 git 状态 */
-export const gitStatusTool = defineTool({
+export const gitStatusTool: ToolDefinition = {
   name: 'git_status',
   label: 'Git 状态',
   description:
@@ -34,10 +36,10 @@ export const gitStatusTool = defineTool({
       return text(`git_status 失败：${String(err)}`)
     }
   }
-})
+} as ToolDefinition
 
 /** 2. project_info：读取项目元信息 */
-export const projectInfoTool = defineTool({
+export const projectInfoTool: ToolDefinition = {
   name: 'project_info',
   label: '项目信息',
   description:
@@ -64,10 +66,14 @@ export const projectInfoTool = defineTool({
       return text(`project_info 失败（可能没有 package.json）：${String(err)}`)
     }
   }
-})
+} as ToolDefinition
+
+interface TodosParams {
+  directory?: string
+}
 
 /** 3. find_todos：搜索 TODO / FIXME 标记 */
-export const findTodosTool = defineTool({
+export const findTodosTool: ToolDefinition = {
   name: 'find_todos',
   label: '搜索 TODO',
   description:
@@ -76,7 +82,8 @@ export const findTodosTool = defineTool({
   parameters: Type.Object({
     directory: Type.Optional(Type.String({ description: '要搜索的相对目录，默认 src' }))
   }),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+    const params = rawParams as TodosParams
     const dir = join(ctx.cwd, params.directory ?? 'src')
     const results: string[] = []
     const pattern = /\b(TODO|FIXME|HACK)\b/
@@ -118,10 +125,14 @@ export const findTodosTool = defineTool({
     }
     return text(`找到 ${results.length} 处：\n${results.slice(0, 100).join('\n')}`)
   }
-})
+} as ToolDefinition
+
+interface CountParams {
+  directory?: string
+}
 
 /** 4. count_lines：统计代码行数 */
-export const countLinesTool = defineTool({
+export const countLinesTool: ToolDefinition = {
   name: 'count_lines',
   label: '统计行数',
   description: '统计指定目录（默认 src）下各语言文件的数量与代码行数。用于评估代码规模。',
@@ -129,7 +140,8 @@ export const countLinesTool = defineTool({
   parameters: Type.Object({
     directory: Type.Optional(Type.String({ description: '要统计的相对目录，默认 src' }))
   }),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+    const params = rawParams as CountParams
     const dir = join(ctx.cwd, params.directory ?? 'src')
     const byExt: Record<string, { files: number; lines: number }> = {}
 
@@ -172,7 +184,7 @@ export const countLinesTool = defineTool({
       .join('\n')
     return text(`共 ${total} 行\n${body}`)
   }
-})
+} as ToolDefinition
 
 /** 全部静态内置工具（通过 createAgentSession({ customTools }) 注册） */
 export const builtinTools: ToolDefinition[] = [
