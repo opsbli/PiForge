@@ -35,6 +35,92 @@ function toNode(absPath: string, stats: import('node:fs').Stats): FileNode {
   }
 }
 
+const SEARCH_SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'out',
+  'release',
+  'dist',
+  '.vite',
+  '.cache',
+  '.pax',
+  '.pi'
+])
+const SEARCH_MAX_DEPTH = 4
+const SEARCH_MAX_VISITED = 4000
+const SEARCH_DEFAULT_LIMIT = 60
+
+interface SearchHit {
+  node: FileNode
+  score: number
+}
+
+/**
+ * 工作区内模糊搜索（供输入框 @ 引用使用）。
+ *
+ * 约束：只在当前工作区内递归（走 ensureInsideWorkspace ⟹ 越界不可能发生）；
+ * 限深 + 限访问总数 + 限返回条数，避免大仓库把主进程拖死。
+ */
+async function searchWorkspace(query: string, limit: number): Promise<FileNode[]> {
+  const workspace = getWorkspace()
+  if (!workspace) throw new Error('尚未选择工作区')
+  const needle = query.trim().toLowerCase()
+
+  const hits: SearchHit[] = []
+  let visited = 0
+  const root = resolve(workspace)
+
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > SEARCH_MAX_DEPTH || visited > SEARCH_MAX_VISITED) return
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (visited > SEARCH_MAX_VISITED) return
+      visited += 1
+      if (entry.isDirectory() && SEARCH_SKIP_DIRS.has(entry.name)) continue
+      if (entry.name.startsWith('.') && entry.isDirectory()) continue
+
+      const absChild = join(dir, entry.name)
+      const relPath = relative(root, absChild).replace(/\\/g, '/')
+      const name = entry.name
+
+      let isMatched = needle.length === 0
+      let score = 99
+      if (needle.length > 0) {
+        const lowerName = name.toLowerCase()
+        const lowerRel = relPath.toLowerCase()
+        if (lowerName === needle) score = 0
+        else if (lowerName.startsWith(needle)) score = 1
+        else if (lowerName.includes(needle)) score = 2
+        else if (lowerRel.includes(needle)) score = 3
+        isMatched = score !== 99
+      }
+
+      if (isMatched) {
+        try {
+          const stats = await fs.stat(absChild)
+          hits.push({ node: toNode(absChild, stats), score: score + (entry.isDirectory() ? 0.5 : 0) })
+        } catch {
+          // 跳过无权限/损坏项
+        }
+      }
+
+      if (entry.isDirectory()) await walk(absChild, depth + 1)
+    }
+  }
+
+  await walk(root, 0)
+
+  return hits
+    .sort((a, b) => (a.score === b.score ? a.node.relativePath.localeCompare(b.node.relativePath) : a.score - b.score))
+    .slice(0, Math.max(1, Math.min(limit, 200)))
+    .map((hit) => hit.node)
+}
+
 export function registerFsIpc(): void {
   ipcMain.handle(IPC.WORKSPACE_GET, async (): Promise<string | null> => getWorkspace())
 
@@ -62,6 +148,12 @@ export function registerFsIpc(): void {
       a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1
     )
   })
+
+  ipcMain.handle(
+    IPC.FS_SEARCH,
+    async (_event, query: unknown, limit: unknown): Promise<FileNode[]> =>
+      searchWorkspace(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : SEARCH_DEFAULT_LIMIT)
+  )
 
   ipcMain.handle(IPC.FS_READ, async (_event, filePath: unknown): Promise<string> => {
     const abs = ensureInsideWorkspace(String(filePath))

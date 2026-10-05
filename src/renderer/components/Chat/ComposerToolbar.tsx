@@ -112,15 +112,13 @@ function ThinkingControl(): JSX.Element {
   )
 }
 
-/** 附件：菜单选择文件或文件夹，选中项显示为 chip */
+/** 附件：菜单选择文件或文件夹（选中项以 chip 形式显示在输入框内部） */
 function AttachControl(): JSX.Element {
   const [open, setOpen] = useState(false)
-  const attachments = useComposerStore((s) => s.attachments)
   const addAttachments = useComposerStore((s) => s.addAttachments)
-  const removeAttachment = useComposerStore((s) => s.removeAttachment)
 
   return (
-    <div className="relative flex min-w-0 items-center gap-1">
+    <div className="relative">
       <Button
         variant="ghost"
         size="icon-sm"
@@ -130,28 +128,6 @@ function AttachControl(): JSX.Element {
       >
         <Paperclip />
       </Button>
-
-      {attachments.length > 0 && (
-        <div className="flex min-w-0 max-w-[46%] items-center gap-1 overflow-x-auto">
-          {attachments.map((path) => (
-            <span
-              key={path}
-              title={path}
-              className="flex shrink-0 items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[10px] text-foreground"
-            >
-              <span className="max-w-[10rem] truncate">{basenameOf(path)}</span>
-              <button
-                type="button"
-                aria-label={`移除 ${path}`}
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => removeAttachment(path)}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
 
       {open && (
         <Popover onClose={() => setOpen(false)} className="w-36 p-1">
@@ -371,11 +347,4 @@ function MenuItem({ onClick, children }: { onClick: () => void; children: ReactN
       {children}
     </button>
   )
-}
-
-/** 取路径最后一段，用于附件 chip */
-function basenameOf(path: string): string {
-  const normalized = path.replace(/[\\/]+$/, '')
-  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
-  return index >= 0 ? normalized.slice(index + 1) : normalized
 }

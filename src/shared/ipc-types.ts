@@ -56,6 +56,7 @@ export const IPC = {
 
   // 文件系统
   FS_LIST: 'fs:list',
+  FS_SEARCH: 'fs:search',
   FS_READ: 'fs:read',
   FS_WRITE: 'fs:write',
   FS_CREATE: 'fs:create',
@@ -915,6 +916,8 @@ export interface PiForgeApi {
 
   // 文件系统
   listDir(dirPath: string): Promise<FileNode[]>
+  /** 在当前工作区内按名称/路径模糊搜索（限深限数），用于 @ 引用文件 */
+  searchFiles(query: string, limit?: number): Promise<FileNode[]>
   readFile(filePath: string): Promise<string>
   writeFile(filePath: string, content: string): Promise<void>
   createEntry(parentDir: string, name: string, isDirectory: boolean): Promise<FileNode>

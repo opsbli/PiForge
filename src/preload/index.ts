@@ -153,6 +153,7 @@ const api: PiForgeApi = {
 
   // ---- 文件系统 ----
   listDir: (dirPath: string) => ipcRenderer.invoke(IPC.FS_LIST, dirPath),
+  searchFiles: (query: string, limit?: number) => ipcRenderer.invoke(IPC.FS_SEARCH, query, limit),
   readFile: (filePath: string) => ipcRenderer.invoke(IPC.FS_READ, filePath),
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke(IPC.FS_WRITE, filePath, content),
