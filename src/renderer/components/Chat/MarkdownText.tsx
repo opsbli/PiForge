@@ -1,6 +1,7 @@
-import type { JSX } from 'react'
+import { useMemo, type JSX } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ReadFilesBlock } from '@renderer/components/Chat/ReadFilesBlock'
 import { cn } from '@renderer/lib/utils'
 
 /**
@@ -96,13 +97,69 @@ const COMPONENTS: Components = {
 }
 
 export function MarkdownText({ text, className }: { text: string; className?: string }): JSX.Element {
+  const segments = useMemo(() => splitReadFiles(text), [text])
+
   return (
     <div className={cn('chat-markdown flex flex-col gap-2 break-words', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
-        {text}
-      </ReactMarkdown>
+      {segments.map((segment, index) =>
+        segment.kind === 'read-files' ? (
+          <ReadFilesBlock key={`rf-${index}`} files={segment.files} />
+        ) : (
+          <ReactMarkdown
+            key={`md-${index}`}
+            remarkPlugins={[remarkGfm]}
+            components={COMPONENTS}
+          >
+            {segment.text}
+          </ReactMarkdown>
+        )
+      )}
     </div>
   )
+}
+
+type Segment =
+  | { kind: 'markdown'; text: string }
+  | { kind: 'read-files'; files: string[] }
+
+const READ_FILES_PATTERN = /<read-files>([\s\S]*?)<\/read-files>/gi
+
+/**
+ * 把 `<read-files>...</read-files>` 块从 Markdown 源里切出来。
+ *
+ * 切出来而不是交给 rehype-raw：后者会把任意 HTML 变成 React 元素（含事件属性），
+ * 需要再叠一层 rehype-sanitize 才能收紧；而这里的标记是固定的约定格式，
+ * 只需精确处理这一个。其余原始 HTML 仍由 react-markdown 默认转义为文本。
+ */
+export function splitReadFiles(source: string): Segment[] {
+  const segments: Segment[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  READ_FILES_PATTERN.lastIndex = 0
+  while ((match = READ_FILES_PATTERN.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ kind: 'markdown', text: source.slice(lastIndex, match.index) })
+    }
+
+    const files = [
+      ...new Set(
+        match[1]
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+      )
+    ]
+    if (files.length > 0) segments.push({ kind: 'read-files', files })
+
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < source.length) {
+    segments.push({ kind: 'markdown', text: source.slice(lastIndex) })
+  }
+
+  return segments
 }
 
 /** 从 `<pre>` 的 hast 节点里读出 `<code class="language-xxx">` 的语言名 */
