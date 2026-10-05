@@ -54,6 +54,7 @@ export const IPC = {
   SESSION_LIST: 'session:list',
   SESSION_NEW: 'session:new',
   SESSION_SWITCH: 'session:switch',
+  SESSION_MESSAGES: 'session:messages',
 
   // 窗口控制（自定义标题栏）
   WINDOW_MINIMIZE: 'window:minimize',
@@ -98,6 +99,27 @@ export interface SessionListItem {
   modified: string
   firstMessage: string
 }
+
+/**
+ * 会话历史消息（回显用）。
+ * 由 agent 进程按「根 → 当前 leaf」的活动分支重建，已过滤 system 与 thinking。
+ * 字段形状与渲染进程的 ChatMessage 对齐，便于直接落进对话流。
+ */
+export type SessionHistoryMessage =
+  | { id: string; role: 'user'; text: string }
+  | { id: string; role: 'assistant'; text: string }
+  | {
+      id: string
+      role: 'tool'
+      callId: string
+      tool: string
+      args: unknown
+      status: 'ok' | 'error'
+      result?: unknown
+      error?: string
+    }
+  // 分支摘要 / 上下文压缩摘要：不是对话消息，但属于当前上下文，单独标注展示
+  | { id: string; role: 'note'; title: string; text: string }
 
 /** 危险操作审批请求 */
 export interface ApprovalRequest {
@@ -225,6 +247,8 @@ export interface PiForgeApi {
   listSessions(): Promise<SessionListItem[]>
   newSession(): Promise<void>
   switchSession(sessionPath: string): Promise<void>
+  /** 读取当前会话活动分支的历史消息 */
+  getSessionMessages(): Promise<SessionHistoryMessage[]>
 
   // 审批
   onApprovalRequest(cb: (request: ApprovalRequest) => void): () => void

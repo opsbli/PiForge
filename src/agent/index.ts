@@ -1,7 +1,7 @@
 import { createSession, listSessions, type SessionHandle, type TreeEntry } from './session'
 import type { ApprovalRequest } from './approval'
 import type { AgentEvent } from '../shared/agent-events'
-import type { SessionSummary, SessionListItem } from '../shared/ipc-types'
+import type { SessionSummary, SessionListItem, SessionHistoryMessage } from '../shared/ipc-types'
 
 /**
  * Agent Utility Process 入口。
@@ -17,6 +17,7 @@ type InboundMessage =
   | { type: 'session_list'; requestId: string }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
+  | { type: 'session_messages'; requestId: string }
   | { type: 'tree_get'; requestId: string }
   | {
       type: 'tree_navigate'
@@ -31,6 +32,7 @@ type OutboundMessage =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -56,8 +58,36 @@ const approvalBridge = {
   }
 }
 
+/**
+ * 会话级操作串行链。
+ *
+ * session_new / session_switch 是异步重建会话，重建期间 `session` 仍指向旧句柄；
+ * 若此时插入读取请求（如 session_messages），会拿到上一个会话的数据。
+ * 因此把「读写当前会话」的请求排进同一条链。
+ *
+ * prompt 与 approval_response 必须立即派发：prompt 会 await 整个 turn，
+ * 审批响应排在其后会直接死锁。
+ */
+let sessionOps: Promise<void> = Promise.resolve()
+
+function runSessionOp(task: () => Promise<void>): void {
+  sessionOps = sessionOps.then(task).catch((err) => {
+    post({ type: 'error', message: `会话操作失败：${String(err)}` })
+  })
+}
+
+const IMMEDIATE_TYPES: ReadonlySet<InboundMessage['type']> = new Set([
+  'prompt',
+  'approval_response'
+])
+
 port.on('message', (event) => {
-  void handle(event.data as InboundMessage)
+  const message = event.data as InboundMessage
+  if (IMMEDIATE_TYPES.has(message.type)) {
+    void handle(message)
+    return
+  }
+  runSessionOp(() => handle(message))
 })
 
 /** 建立会话并挂上事件流 */
@@ -124,6 +154,16 @@ async function handle(message: InboundMessage): Promise<void> {
     } catch (err) {
       post({ type: 'error', message: `切换会话失败：${String(err)}` })
     }
+    return
+  }
+
+  if (message.type === 'session_messages') {
+    // 会话未就绪时返回空列表（而非报错），让 UI 得到确定结果
+    post({
+      type: 'session_messages_result',
+      requestId: message.requestId,
+      messages: session ? session.history() : []
+    })
     return
   }
 

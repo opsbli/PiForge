@@ -56,13 +56,15 @@ function Field({ label, value }: { label: string; value: unknown }): JSX.Element
     <div className="mt-2 first:mt-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <pre className="mt-1 max-h-52 overflow-auto rounded bg-background/70 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-        {safeJson(value)}
+        {formatValue(value)}
       </pre>
     </div>
   )
 }
 
-function safeJson(value: unknown): string {
+function formatValue(value: unknown): string {
+  // 字符串原样展示（工具结果多为纯文本，JSON.stringify 会加上引号与转义）
+  if (typeof value === 'string') return value
   try {
     return JSON.stringify(value, null, 2)
   } catch {

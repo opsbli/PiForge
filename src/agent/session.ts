@@ -1,6 +1,6 @@
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { AgentEvent } from '../shared/agent-events'
-import type { SessionSummary } from '../shared/ipc-types'
+import type { SessionSummary, SessionHistoryMessage } from '../shared/ipc-types'
 import { createApprovalExtension, type ApprovalBridge } from './approval'
 import { createMemoryExtension } from './memory'
 import { builtinTools } from './tools'
@@ -27,6 +27,8 @@ export interface SessionHandle {
   summary(): SessionSummary
   /** 会话文件路径（持久化模式） */
   sessionFile(): string | undefined
+  /** 读取当前分支的历史消息（切换/恢复会话后回显用） */
+  history(): SessionHistoryMessage[]
   /** 读取会话树（简化结构） */
   getTree(): TreeEntry[]
   /** 当前 leaf 节点 id */
@@ -165,6 +167,10 @@ function wrapSession(session: AgentSession, modelLabel: string): SessionHandle {
       return session.getSessionStats().sessionFile
     },
 
+    history(): SessionHistoryMessage[] {
+      return buildHistory(session.sessionManager)
+    },
+
     getTree(): TreeEntry[] {
       const manager = session.sessionManager
       const roots = manager.getTree()
@@ -233,4 +239,159 @@ function previewOf(content: unknown): string {
     if (toolCalls.length > 0) return `[工具调用 x${toolCalls.length}]`
   }
   return '(空)'
+}
+
+/** 单条工具结果保留的最大字符数（避免历史回显把巨型输出拉进渲染进程） */
+const HISTORY_RESULT_LIMIT = 4000
+
+interface RawTreeNode {
+  entry: {
+    type: string
+    id: string
+    parentId: string | null
+    timestamp?: string
+    message?: unknown
+    summary?: string
+  }
+  children: RawTreeNode[]
+  label?: string
+}
+
+/**
+ * 重建会话历史（供切换/恢复会话后回显）。
+ *
+ * 只取「根 → 当前 leaf」这一条活动分支，与 navigateTree 的语义一致：
+ * 被放弃的分支不会混进当前对话。assistant 的 thinking 块不展示，
+ * 工具结果通过 toolCallId 回填到对应的 toolCall 上。
+ */
+function buildHistory(manager: unknown): SessionHistoryMessage[] {
+  const branch = activeBranch(manager)
+  if (branch.length === 0) return []
+
+  const results = collectToolResults(branch)
+  const messages: SessionHistoryMessage[] = []
+
+  for (const node of branch) {
+    // 分支/压缩摘要不是对话消息，但已进入 agent 上下文，单独成条展示
+    if (node.entry.type === 'branch_summary' || node.entry.type === 'compaction') {
+      const text = (node.entry.summary ?? '').trim()
+      if (text) {
+        messages.push({
+          id: node.entry.id,
+          role: 'note',
+          title: node.entry.type === 'compaction' ? '上下文压缩摘要' : '分支摘要',
+          text: truncateResult(text)
+        })
+      }
+      continue
+    }
+
+    if (node.entry.type !== 'message') continue
+    const message = node.entry.message as { role?: string; content?: unknown } | undefined
+    if (!message?.role) continue
+
+    if (message.role === 'user') {
+      const text = textOfContent(message.content)
+      if (text) messages.push({ id: node.entry.id, role: 'user', text })
+      continue
+    }
+
+    // toolResult 已在 collectToolResults 中消费，不单独成条
+    if (message.role !== 'assistant') continue
+
+    const text = textOfContent(message.content)
+    if (text) messages.push({ id: node.entry.id, role: 'assistant', text })
+
+    const blocks = Array.isArray(message.content) ? message.content : []
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue
+      const call = block as { type?: string; id?: string; name?: string; arguments?: unknown }
+      if (call.type !== 'toolCall' || !call.id) continue
+
+      const result = results.get(call.id)
+      messages.push({
+        id: `${node.entry.id}:${call.id}`,
+        role: 'tool',
+        callId: call.id,
+        tool: call.name ?? 'unknown',
+        args: call.arguments,
+        status: result && !result.isError ? 'ok' : 'error',
+        result: result ? truncateResult(result.text) : undefined,
+        error: result
+          ? result.isError
+            ? truncateResult(result.text) || '工具执行失败'
+            : undefined
+          : '没有记录到该工具调用的结果（会话中断或该分支已切换）'
+      })
+    }
+  }
+
+  return messages
+}
+
+/** 从 leaf 沿 parentId 上溯到根，再反转成时间顺序 */
+function activeBranch(manager: unknown): RawTreeNode[] {
+  const sessionManager = manager as {
+    getTree: () => RawTreeNode[]
+    getLeafId: () => string | null
+  }
+
+  const byId = new Map<string, RawTreeNode>()
+  const collect = (nodes: RawTreeNode[]): void => {
+    for (const node of nodes) {
+      byId.set(node.entry.id, node)
+      collect(node.children)
+    }
+  }
+  collect(sessionManager.getTree())
+
+  const leafId = sessionManager.getLeafId()
+  if (!leafId) return []
+
+  const chain: RawTreeNode[] = []
+  let current = byId.get(leafId)
+  while (current) {
+    chain.push(current)
+    const parentId = current.entry.parentId
+    current = parentId ? byId.get(parentId) : undefined
+  }
+
+  return chain.reverse()
+}
+
+function collectToolResults(
+  branch: RawTreeNode[]
+): Map<string, { isError: boolean; text: string }> {
+  const results = new Map<string, { isError: boolean; text: string }>()
+
+  for (const node of branch) {
+    if (node.entry.type !== 'message') continue
+    const message = node.entry.message as
+      | { role?: string; toolCallId?: string; content?: unknown; isError?: boolean }
+      | undefined
+    if (message?.role !== 'toolResult' || !message.toolCallId) continue
+    results.set(message.toolCallId, {
+      isError: Boolean(message.isError),
+      text: textOfContent(message.content)
+    })
+  }
+
+  return results
+}
+
+/** 只拼接 text 块，忽略 thinking / toolCall 等非文本块 */
+function textOfContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .filter((block) => block && typeof block === 'object' && (block as { type?: string }).type === 'text')
+    .map((block) => String((block as { text?: string }).text ?? ''))
+    .join('\n')
+    .trim()
+}
+
+function truncateResult(text: string): string {
+  if (text.length <= HISTORY_RESULT_LIMIT) return text
+  return `${text.slice(0, HISTORY_RESULT_LIMIT)}\n\n…（历史回显已截断，原始长度 ${text.length} 字符）`
 }

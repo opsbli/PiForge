@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Sparkles, SendHorizontal, User } from 'lucide-react'
+import { ScrollText, Sparkles, SendHorizontal, User } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Textarea } from '@renderer/components/ui/textarea'
@@ -67,6 +67,18 @@ function EmptyHint(): JSX.Element {
 function MessageRow({ message }: { message: ChatMessage }): JSX.Element {
   if (message.role === 'tool') {
     return <ToolCallCard message={message} />
+  }
+
+  if (message.role === 'note') {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card/40 px-3 py-2">
+        <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <ScrollText className="size-3" />
+          {message.title}
+        </div>
+        <MarkdownText text={message.text} className="text-muted-foreground" />
+      </div>
+    )
   }
 
   if (message.role === 'user') {

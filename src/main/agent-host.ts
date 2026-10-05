@@ -1,7 +1,13 @@
 import { utilityProcess, type UtilityProcess, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-types'
-import type { SessionSummary, SessionListItem, ApprovalRequest, TreeEntry } from '../shared/ipc-types'
+import type {
+  SessionSummary,
+  SessionListItem,
+  SessionHistoryMessage,
+  ApprovalRequest,
+  TreeEntry
+} from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
 import { resolveApiKey } from './credentials'
 import { beginTrace, endTrace, recordToolSpan, getStats } from './trace-store'
@@ -12,6 +18,7 @@ type AgentOutbound =
   | { type: 'summary'; requestId: string; summary: SessionSummary }
   | { type: 'approval_request'; requestId: string; request: ApprovalRequest }
   | { type: 'session_list_result'; requestId: string; sessions: SessionListItem[] }
+  | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'tree_result'; requestId: string; tree: TreeEntry[]; leafId: string | null }
   | { type: 'error'; message: string }
 
@@ -28,6 +35,7 @@ export class AgentHost {
   private sessionId: string | null = null
   private summaryWaiters = new Map<string, (summary: SessionSummary) => void>()
   private sessionListWaiters = new Map<string, (sessions: SessionListItem[]) => void>()
+  private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
   private treeWaiters = new Map<string, (r: { tree: TreeEntry[]; leafId: string | null }) => void>()
   /** agent 侧审批 requestId → UI callId 映射 */
   private approvalByCallId = new Map<string, string>()
@@ -97,6 +105,19 @@ export class AgentHost {
       const requestId = `req-${++this.requestSeq}`
       this.sessionListWaiters.set(requestId, resolve)
       this.child.postMessage({ type: 'session_list', requestId })
+    })
+  }
+
+  /** 读取当前会话活动分支的历史消息（切换/恢复会话后回显） */
+  getSessionMessages(): Promise<SessionHistoryMessage[]> {
+    return new Promise((resolve) => {
+      if (!this.child) {
+        resolve([])
+        return
+      }
+      const requestId = `req-${++this.requestSeq}`
+      this.historyWaiters.set(requestId, resolve)
+      this.child.postMessage({ type: 'session_messages', requestId })
     })
   }
 
@@ -224,6 +245,14 @@ export class AgentHost {
         if (waiter) {
           this.sessionListWaiters.delete(message.requestId)
           waiter(message.sessions)
+        }
+        break
+      }
+      case 'session_messages_result': {
+        const waiter = this.historyWaiters.get(message.requestId)
+        if (waiter) {
+          this.historyWaiters.delete(message.requestId)
+          waiter(message.messages)
         }
         break
       }

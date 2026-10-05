@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AgentEvent } from '@shared/agent-events'
+import type { SessionHistoryMessage } from '@shared/ipc-types'
 
 export interface UserMessage {
   id: string
@@ -25,7 +26,14 @@ export interface ToolMessage {
   error?: string
 }
 
-export type ChatMessage = UserMessage | AssistantMessage | ToolMessage
+export interface NoteMessage {
+  id: string
+  role: 'note'
+  title: string
+  text: string
+}
+
+export type ChatMessage = UserMessage | AssistantMessage | ToolMessage | NoteMessage
 
 interface ChatState {
   messages: ChatMessage[]
@@ -34,6 +42,8 @@ interface ChatState {
   addUserMessage: (text: string) => void
   /** 把 Agent 事件归并进消息列表 */
   handleAgentEvent: (event: AgentEvent) => void
+  /** 从 agent 侧读取当前会话历史并替换本地列表（切换/新建会话后调用） */
+  loadHistory: () => Promise<void>
 }
 
 let seq = 0
@@ -47,6 +57,16 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => ({
       messages: [...state.messages, { id: nextId('user'), role: 'user', text }]
     })),
+
+  loadHistory: async () => {
+    try {
+      const history = await window.piforge.getSessionMessages()
+      set({ messages: history.map(toChatMessage), streaming: false })
+    } catch {
+      // 读取失败时清空，避免残留上一个会话的消息造成误导
+      set({ messages: [], streaming: false })
+    }
+  },
 
   handleAgentEvent: (event) =>
     set((state) => {
@@ -131,3 +151,11 @@ export const useChatStore = create<ChatState>((set) => ({
       }
     })
 }))
+
+/** 历史消息只缺 streaming 标记，其余字段与实时消息一致 */
+function toChatMessage(message: SessionHistoryMessage): ChatMessage {
+  if (message.role === 'assistant') {
+    return { id: message.id, role: 'assistant', text: message.text, streaming: false }
+  }
+  return message
+}

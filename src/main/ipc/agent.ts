@@ -44,6 +44,10 @@ export function registerAgentIpc(): void {
     return agentHost.listSessions()
   })
 
+  ipcMain.handle(IPC.SESSION_MESSAGES, async () => {
+    return agentHost.getSessionMessages()
+  })
+
   ipcMain.handle(IPC.TREE_GET, async () => {
     return agentHost.getTree()
   })
