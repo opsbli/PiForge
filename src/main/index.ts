@@ -6,10 +6,12 @@ import {
   registerFsIpc,
   registerTerminalIpc,
   registerMemoryIpc,
+  registerSandboxIpc,
   disposeTerminals
 } from './ipc'
 import { agentHost } from './agent-host'
 import { setWorkspace } from './workspace'
+import { stopContainer } from './sandbox'
 import { setupAutoUpdater } from './updater'
 
 function createWindow(): void {
@@ -43,6 +45,7 @@ app.whenReady().then(() => {
   registerFsIpc()
   registerTerminalIpc()
   registerMemoryIpc()
+  registerSandboxIpc()
   setupAutoUpdater()
   // 启动时默认把当前目录作为工作区（用户可随时用「打开文件夹」切换）
   setWorkspace(process.env.PIFORGE_WORKSPACE ?? process.cwd())
@@ -60,5 +63,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   disposeTerminals()
+  // 退出时清理沙箱容器（避免残留）
+  void stopContainer().catch(() => undefined)
   agentHost.dispose()
 })

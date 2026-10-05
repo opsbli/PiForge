@@ -87,6 +87,12 @@ const api: PiForgeApi = {
     }
   },
 
+  // ---- 沙箱 ----
+  getSandboxStatus: () => ipcRenderer.invoke(IPC.SANDBOX_STATUS),
+  detectDocker: () => ipcRenderer.invoke(IPC.SANDBOX_DETECT),
+  setSandboxMode: (mode: 'local' | 'docker') => ipcRenderer.invoke(IPC.SANDBOX_SET_MODE, mode),
+  stopSandbox: () => ipcRenderer.invoke(IPC.SANDBOX_STOP),
+
   // ---- 会话树 ----
   getTree: () => ipcRenderer.invoke(IPC.TREE_GET),
   navigateTree: (targetId: string, options) =>

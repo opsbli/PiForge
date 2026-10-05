@@ -35,6 +35,12 @@ export const IPC = {
   MEMORY_INDEX: 'memory:index',
   MEMORY_REBUILD: 'memory:rebuild',
 
+  // 沙箱
+  SANDBOX_STATUS: 'sandbox:status',
+  SANDBOX_DETECT: 'sandbox:detect',
+  SANDBOX_SET_MODE: 'sandbox:set-mode',
+  SANDBOX_STOP: 'sandbox:stop',
+
   // 会话树
   TREE_GET: 'tree:get',
   TREE_NAVIGATE: 'tree:navigate',
@@ -121,6 +127,21 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+/** 沙箱状态 */
+export interface SandboxDockerInfo {
+  cliAvailable: boolean
+  daemonRunning: boolean
+  version?: string
+  imageReady: boolean
+  error?: string
+}
+
+export interface SandboxStatus {
+  mode: 'local' | 'docker'
+  docker: SandboxDockerInfo
+  containerId?: string
+}
+
 /** 会话树节点（精简） */
 export interface TreeEntry {
   id: string
@@ -180,6 +201,12 @@ export interface PiForgeApi {
   killTerminal(terminalId: string): Promise<void>
   onTerminalData(cb: (event: TerminalDataEvent) => void): () => void
   onTerminalExit(cb: (event: TerminalExitEvent) => void): () => void
+
+  // 沙箱
+  getSandboxStatus(): Promise<SandboxStatus>
+  detectDocker(): Promise<SandboxDockerInfo>
+  setSandboxMode(mode: 'local' | 'docker'): Promise<SandboxStatus>
+  stopSandbox(): Promise<SandboxStatus>
 
   // 会话树
   getTree(): Promise<{ tree: TreeEntry[]; leafId: string | null }>

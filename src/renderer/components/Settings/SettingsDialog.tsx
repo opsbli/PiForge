@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import type { CredentialStatus } from '@shared/ipc-types'
+import { SandboxSettings } from '@renderer/components/Sandbox/SandboxSettings'
 
 /** 最小设置：写入 DeepSeek API Key（safeStorage 加密存储） */
 export function SettingsDialog({
@@ -60,6 +61,8 @@ export function SettingsDialog({
             <div>正在使用环境变量：{status.usingEnvVar ? '是' : '否'}</div>
           </div>
         )}
+
+        <SandboxSettings />
 
         <div className="mt-5 flex justify-end gap-2">
           <button

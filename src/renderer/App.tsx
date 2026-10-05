@@ -8,6 +8,7 @@ import { SettingsDialog } from '@renderer/components/Settings/SettingsDialog'
 import { SessionList } from '@renderer/components/SessionTree/SessionList'
 import { MemoryPanel } from '@renderer/components/Memory/MemoryPanel'
 import { SessionTree } from '@renderer/components/SessionTree/SessionTree'
+import { SandboxBadge } from '@renderer/components/Sandbox/SandboxSettings'
 import { CostDashboard } from '@renderer/components/Cost/CostDashboard'
 import { useApprovalStore } from '@renderer/stores/approval-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
@@ -56,6 +57,7 @@ export default function App(): JSX.Element {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <SandboxBadge />
           <CostDashboard />
           <button
             className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
