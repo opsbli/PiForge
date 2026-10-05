@@ -1,32 +1,17 @@
 import { useEffect, useState, type JSX } from 'react'
-import {
-  Copy,
-  Cpu,
-  Folder,
-  Minus,
-  Moon,
-  PanelLeft,
-  Settings,
-  Square,
-  Sun,
-  X
-} from 'lucide-react'
+import { Copy, Cpu, Folder, Minus, PanelLeft, Square, X } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip } from '@renderer/components/ui/tooltip'
 import { useLayoutStore } from '@renderer/stores/layout-store'
 import { useProjectsStore } from '@renderer/stores/projects-store'
-import { useThemeStore } from '@renderer/stores/theme-store'
 
-/** 自定义标题栏：拖拽区 + 当前项目 + 主题/设置 + 窗口控制 */
+/** 自定义标题栏：拖拽区 + 当前项目 + 窗口控制（主题/设置已移到左下角） */
 export function TitleBar(): JSX.Element {
   const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
-  const openSettings = useLayoutStore((s) => s.openSettings)
   const projects = useProjectsStore((s) => s.projects)
   const activeProjectId = useProjectsStore((s) => s.activeProjectId)
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
-  const resolvedTheme = useThemeStore((s) => s.resolved)
-  const toggleTheme = useThemeStore((s) => s.toggle)
 
   return (
     <header className="app-drag flex h-10 shrink-0 items-center gap-1.5 border-b border-border bg-sidebar px-2">
@@ -67,23 +52,6 @@ export function TitleBar(): JSX.Element {
       <div className="min-w-2 flex-1" />
 
       <div className="app-no-drag flex items-center gap-0.5">
-        <Tooltip label={resolvedTheme === 'dark' ? '切换到亮色' : '切换到暗色'} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="切换主题"
-            onClick={toggleTheme}
-          >
-            {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
-          </Button>
-        </Tooltip>
-
-        <Tooltip label="设置" side="bottom">
-          <Button variant="ghost" size="icon-sm" aria-label="设置" onClick={openSettings}>
-            <Settings />
-          </Button>
-        </Tooltip>
-
         <WindowControls />
       </div>
     </header>

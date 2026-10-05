@@ -1,12 +1,15 @@
 import { type JSX, type ReactNode } from 'react'
-import { Activity, Brain, GitBranch, Plus, Settings } from 'lucide-react'
+import { Activity, Brain, GitBranch, Moon, Plus, Settings, Sun } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Separator } from '@renderer/components/ui/separator'
 import { ProjectGroup } from '@renderer/components/layout/ProjectGroup'
+import { ProfileAvatar } from '@renderer/components/Profile/ProfileAvatar'
 import { useCostStore } from '@renderer/stores/cost-store'
-import { useLayoutStore } from '@renderer/stores/layout-store'
+import { useLayoutStore, type SettingsSectionId } from '@renderer/stores/layout-store'
+import { useProfileStore } from '@renderer/stores/profile-store'
+import { useThemeStore } from '@renderer/stores/theme-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 import { cn } from '@renderer/lib/utils'
 
@@ -89,13 +92,51 @@ function NavItem({
 }
 
 /**
- * 底部状态区：只保留设置入口。
+ * 底部状态区：头像 + 昵称（点击进「设置 → 通用」）+ 主题切换 + 设置。
  * 「打开项目」已并入「项目」分组头部操作（见 ProjectGroup）。
  */
-function SidebarFooter({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
+function SidebarFooter({
+  onOpenSettings
+}: {
+  onOpenSettings: (section?: SettingsSectionId) => void
+}): JSX.Element {
+  const nickname = useProfileStore((s) => s.nickname)
+  const avatarDataUrl = useProfileStore((s) => s.avatarDataUrl)
+  const defaultNickname = useProfileStore((s) => s.defaultNickname)
+  const resolvedTheme = useThemeStore((s) => s.resolved)
+  const toggleTheme = useThemeStore((s) => s.toggle)
+
+  const name = nickname?.trim() || defaultNickname || '未命名用户'
+
   return (
-    <div className="flex shrink-0 items-center justify-end border-t border-sidebar-border p-2">
-      <Button variant="ghost" size="icon-sm" aria-label="设置" title="设置" onClick={onOpenSettings}>
+    <div className="flex shrink-0 items-center gap-1 border-t border-sidebar-border p-2">
+      <button
+        type="button"
+        onClick={() => onOpenSettings('general')}
+        title={`${name} · 打开个人资料设置`}
+        className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 text-left transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <ProfileAvatar avatarDataUrl={avatarDataUrl} />
+        <span className="truncate text-xs">{name}</span>
+      </button>
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="切换主题"
+        title={resolvedTheme === 'dark' ? '切换到亮色' : '切换到暗色'}
+        onClick={toggleTheme}
+      >
+        {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="设置"
+        title="设置"
+        onClick={() => onOpenSettings()}
+      >
         <Settings />
       </Button>
     </div>

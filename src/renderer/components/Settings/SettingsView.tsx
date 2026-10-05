@@ -19,6 +19,7 @@ import type { SettingsScopeName } from '@shared/ipc-types'
 import { Button } from '@renderer/components/ui/button'
 import { Segmented, type SegmentedOption } from '@renderer/components/ui/segmented'
 import { useSettingsStore } from '@renderer/stores/settings-store'
+import { useLayoutStore, type SettingsSectionId } from '@renderer/stores/layout-store'
 import { cn } from '@renderer/lib/utils'
 import { NoticeBlock } from './SettingsLayout'
 import { SettingsConfirmDialog } from './SettingsConfirmDialog'
@@ -34,18 +35,7 @@ import { SkillsSection } from './sections/SkillsSection'
 import { ToolsSection } from './sections/ToolsSection'
 import { TrustSection } from './sections/TrustSection'
 
-type SectionId =
-  | 'general'
-  | 'model'
-  | 'tools'
-  | 'sandbox'
-  | 'context'
-  | 'extensions'
-  | 'packages'
-  | 'skills'
-  | 'mcp'
-  | 'trust'
-  | 'about'
+type SectionId = SettingsSectionId
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
   { id: 'general', label: '通用', icon: SlidersHorizontal },
@@ -69,6 +59,12 @@ const SCOPE_OPTIONS: SegmentedOption<SettingsScopeName>[] = [
 /** 中栏设置视图：左侧分类导航 + 右侧内容区 + 顶部写入栏 */
 export function SettingsView({ onExit }: { onExit: () => void }): JSX.Element {
   const [active, setActive] = useState<SectionId>('general')
+  const settingsSection = useLayoutStore((s) => s.settingsSection)
+
+  // 外部（如左下角头像）可直接指定要打开的分类
+  useEffect(() => {
+    setActive(settingsSection)
+  }, [settingsSection])
 
   const settings = useSettingsStore((s) => s.settings)
   const trust = useSettingsStore((s) => s.trust)

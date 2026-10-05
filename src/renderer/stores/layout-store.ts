@@ -8,6 +8,19 @@ import { create } from 'zustand'
 export type MainView = 'chat' | 'editor' | 'terminal'
 export type EditorMode = 'preview' | 'edit'
 export type RightTab = 'files' | 'changes'
+/** 设置页分区（供外部直接跳转到指定分类） */
+export type SettingsSectionId =
+  | 'general'
+  | 'model'
+  | 'tools'
+  | 'sandbox'
+  | 'context'
+  | 'extensions'
+  | 'packages'
+  | 'skills'
+  | 'mcp'
+  | 'trust'
+  | 'about'
 export const SIDEBAR_DEFAULT_WIDTH = 272
 export const SIDEBAR_MIN_WIDTH = 220
 export const SIDEBAR_MAX_WIDTH = 420
@@ -97,6 +110,8 @@ interface LayoutState {
   mainView: MainView
   /** 中栏是否处于设置视图（不入 MainView，因为它是覆盖模式而非对等视图） */
   settingsOpen: boolean
+  /** 打开设置时定位到的分类 */
+  settingsSection: SettingsSectionId
   /** 在文件面板打开文件后是否自动把中栏切到编辑器 */
   autoOpenEditor: boolean
   /** 编辑器显示模式偏好：Markdown 文件打开时用它，初始为预览；手动切换后记住 */
@@ -117,7 +132,7 @@ interface LayoutState {
   setAutoOpenEditor: (value: boolean) => void
   setEditorMode: (value: EditorMode) => void
 
-  openSettings: () => void
+  openSettings: (section?: SettingsSectionId) => void
   closeSettings: () => void
 }
 
@@ -129,6 +144,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   rightTab: 'files',
   mainView: 'chat',
   settingsOpen: false,
+  settingsSection: 'general',
   autoOpenEditor: true,
   editorMode: 'preview',
   ...readPersistedLayout(),
@@ -160,7 +176,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setAutoOpenEditor: (autoOpenEditor) => set({ autoOpenEditor }),
   setEditorMode: (editorMode) => set({ editorMode }),
 
-  openSettings: () => set({ settingsOpen: true }),
+  openSettings: (section = 'general') => set({ settingsOpen: true, settingsSection: section }),
   closeSettings: () => set({ settingsOpen: false })
 }))
 

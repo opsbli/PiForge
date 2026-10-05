@@ -47,6 +47,13 @@ export const IPC = {
   PROJECT_CHANGED: 'project:changed',
   AGENT_WAIT_READY: 'agent:wait-ready',
 
+  // 本机个人资料（头像 / 昵称）
+  PROFILE_GET: 'profile:get',
+  PROFILE_SET_NICKNAME: 'profile:set-nickname',
+  PROFILE_PICK_AVATAR: 'profile:pick-avatar',
+  PROFILE_CLEAR_AVATAR: 'profile:clear-avatar',
+  PROFILE_CHANGED: 'profile:changed',
+
   // 文件系统
   FS_LIST: 'fs:list',
   FS_READ: 'fs:read',
@@ -703,6 +710,20 @@ export interface ProjectIdRequest {
   id: string
 }
 
+/** 本机个人资料（头像 / 昵称）；属于界面身份，不入 agent 配置 */
+export interface UserProfile {
+  /** 已设置的昵称；未设置为 null */
+  nickname: string | null
+  /** 头像 data URL；未设置为 null */
+  avatarDataUrl: string | null
+  /** 未设置昵称时用于展示的默认昵称（系统用户名，回退「未命名用户」） */
+  defaultNickname: string
+}
+
+export interface ProfileNicknameRequest {
+  nickname: string
+}
+
 /** preload 暴露到 window.piforge 的白名单 API */
 export interface PiForgeApi {
   // Agent
@@ -772,6 +793,15 @@ export interface PiForgeApi {
   activateProject(request: ProjectIdRequest): Promise<ProjectState>
   /** 项目列表变化（主进程广播） */
   onProjectChanged(cb: (state: ProjectState) => void): () => void
+
+  // 本机个人资料（头像 / 昵称）
+  getProfile(): Promise<UserProfile>
+  setNickname(request: ProfileNicknameRequest): Promise<UserProfile>
+  /** 弹出图片选择框设置头像；取消返回 null */
+  pickAvatar(): Promise<UserProfile | null>
+  clearAvatar(): Promise<UserProfile>
+  /** 个人资料变化（主进程广播） */
+  onProfileChanged(cb: (profile: UserProfile) => void): () => void
 
   // 文件系统
   listDir(dirPath: string): Promise<FileNode[]>

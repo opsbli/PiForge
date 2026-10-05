@@ -11,6 +11,7 @@ import { TracePanel } from '@renderer/components/Trace/TracePanel'
 import { useApprovalStore } from '@renderer/stores/approval-store'
 import { useCostStore } from '@renderer/stores/cost-store'
 import { useLayoutStore } from '@renderer/stores/layout-store'
+import { useProfileStore } from '@renderer/stores/profile-store'
 import { useProjectsStore } from '@renderer/stores/projects-store'
 import { useWorkspaceStore } from '@renderer/stores/workspace-store'
 
@@ -38,6 +39,11 @@ export default function App(): JSX.Element {
   // 启动时载入项目列表（同时同步工作区、会话列表与成本摘要）
   useEffect(() => {
     void useProjectsStore.getState().load()
+  }, [])
+
+  // 启动时载入本机个人资料（头像 / 昵称）
+  useEffect(() => {
+    void useProfileStore.getState().load()
   }, [])
 
   // Ctrl/Cmd+N 新建会话（未选工作区时不响应）

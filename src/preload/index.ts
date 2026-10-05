@@ -8,6 +8,7 @@ import type {
   MemoryEntry,
   PackageProgress,
   ProjectState,
+  UserProfile,
   UpdaterStatus
 } from '../shared/ipc-types'
 import type { AgentEvent } from '../shared/agent-events'
@@ -119,6 +120,19 @@ const api: PiForgeApi = {
     ipcRenderer.on(IPC.PROJECT_CHANGED, listener)
     return () => {
       ipcRenderer.removeListener(IPC.PROJECT_CHANGED, listener)
+    }
+  },
+
+  // ---- 本机个人资料（头像 / 昵称） ----
+  getProfile: () => ipcRenderer.invoke(IPC.PROFILE_GET),
+  setNickname: (request) => ipcRenderer.invoke(IPC.PROFILE_SET_NICKNAME, request),
+  pickAvatar: () => ipcRenderer.invoke(IPC.PROFILE_PICK_AVATAR),
+  clearAvatar: () => ipcRenderer.invoke(IPC.PROFILE_CLEAR_AVATAR),
+  onProfileChanged: (cb) => {
+    const listener = (_event: unknown, payload: UserProfile): void => cb(payload)
+    ipcRenderer.on(IPC.PROFILE_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.PROFILE_CHANGED, listener)
     }
   },
 
