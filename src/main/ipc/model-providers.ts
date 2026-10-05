@@ -4,7 +4,6 @@ import type {
   CustomProvider,
   ProviderProbeRequest,
   ProviderProbeResult,
-  ProviderTemplate,
   SaveProviderRequest
 } from '../../shared/ipc-types'
 import {
@@ -33,10 +32,6 @@ function afterChange(): void {
 
 export function registerModelProviderIpc(): void {
   ipcMain.handle(IPC.CUSTOM_PROVIDER_LIST, async (): Promise<CustomProvider[]> => listProviders())
-
-  ipcMain.handle(IPC.CUSTOM_PROVIDER_TEMPLATES, async (): Promise<ProviderTemplate[]> => {
-    return (await agentHost.getProviderTemplates()) ?? []
-  })
 
   ipcMain.handle(
     IPC.CUSTOM_PROVIDER_SAVE,

@@ -8,7 +8,6 @@ import type {
   SessionHistoryMessage,
   SessionMeta,
   ModelListItem,
-  ProviderTemplate,
   SettingsSnapshot,
   SettingsReloadResult,
   SettingsWriteRequest,
@@ -40,7 +39,6 @@ type AgentOutbound =
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
   | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
-  | { type: 'provider_templates_result'; requestId: string; templates: ProviderTemplate[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -74,7 +72,6 @@ export class AgentHost {
     string,
     (result: { models: ModelListItem[]; current: { providerId: string; modelId: string } }) => void
   >()
-  private providerTemplateWaiters = new Map<string, (templates: ProviderTemplate[]) => void>()
   /** agent 进程报告的 agentDir（用于写 models.json） */
   private agentDir: string | null = null
   private historyWaiters = new Map<string, (messages: SessionHistoryMessage[]) => void>()
@@ -394,11 +391,6 @@ export class AgentHost {
     return this.agentDir
   }
 
-  /** 供应商类型模板（来自 SDK 内置目录） */
-  getProviderTemplates(): Promise<ProviderTemplate[] | null> {
-    return this.request({ type: 'provider_templates' }, this.providerTemplateWaiters)
-  }
-
   private handle(message: AgentOutbound): void {
     switch (message.type) {
       case 'ready': {
@@ -489,14 +481,6 @@ export class AgentHost {
         if (waiter) {
           this.modelListWaiters.delete(message.requestId)
           waiter({ models: message.models, current: message.current })
-        }
-        break
-      }
-      case 'provider_templates_result': {
-        const waiter = this.providerTemplateWaiters.get(message.requestId)
-        if (waiter) {
-          this.providerTemplateWaiters.delete(message.requestId)
-          waiter(message.templates)
         }
         break
       }

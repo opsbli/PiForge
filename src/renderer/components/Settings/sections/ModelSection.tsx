@@ -16,9 +16,7 @@ export function ModelSection(): JSX.Element {
   const resolved = settings?.resolved
 
   const customProviders = useCustomProvidersStore((s) => s.providers)
-  const templates = useCustomProvidersStore((s) => s.templates)
   const loadProviders = useCustomProvidersStore((s) => s.load)
-  const loadTemplates = useCustomProvidersStore((s) => s.loadTemplates)
   const removeProvider = useCustomProvidersStore((s) => s.remove)
 
   // editing：undefined = 列表；null = 新建；对象 = 编辑
@@ -26,8 +24,7 @@ export function ModelSection(): JSX.Element {
 
   useEffect(() => {
     void loadProviders()
-    void loadTemplates()
-  }, [loadProviders, loadTemplates])
+  }, [loadProviders])
 
   // provider 配置变化会重启 agent，等就绪后刷新输入框模型清单
   const refreshComposerModels = async (): Promise<void> => {
@@ -71,7 +68,6 @@ export function ModelSection(): JSX.Element {
     return (
       <ProviderForm
         provider={editing}
-        templates={templates}
         onCancel={() => setEditing(undefined)}
         onSaved={() => {
           setEditing(undefined)

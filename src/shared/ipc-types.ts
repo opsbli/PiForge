@@ -105,7 +105,6 @@ export const IPC = {
   CUSTOM_PROVIDER_LIST: 'provider:list',
   CUSTOM_PROVIDER_SAVE: 'provider:save',
   CUSTOM_PROVIDER_DELETE: 'provider:delete',
-  CUSTOM_PROVIDER_TEMPLATES: 'provider:templates',
   CUSTOM_PROVIDER_PROBE: 'provider:probe',
   CUSTOM_PROVIDER_FETCH_MODELS: 'provider:fetch-models',
 
@@ -791,14 +790,6 @@ export interface CustomProvider {
   hasApiKey: boolean
 }
 
-/** 供应商类型模板（来自 SDK 内置目录） */
-export interface ProviderTemplate {
-  id: string
-  name: string
-  baseUrl: string
-  api: string
-}
-
 /** 保存自定义 provider；apiKey 为 null/省略时保留已存密钥，空字符串表示不设置 */
 export interface SaveProviderRequest {
   /** 编辑时的原 provider id；新建时省略，由名称自动派生 */
@@ -855,7 +846,6 @@ export interface PiForgeApi {
   listCustomProviders(): Promise<CustomProvider[]>
   saveCustomProvider(request: SaveProviderRequest): Promise<CustomProvider[]>
   deleteCustomProvider(id: string): Promise<CustomProvider[]>
-  listProviderTemplates(): Promise<ProviderTemplate[]>
   probeProvider(request: ProviderProbeRequest): Promise<ProviderProbeResult>
   fetchProviderModels(request: ProviderProbeRequest): Promise<ProviderProbeResult>
 

@@ -48,7 +48,6 @@ const api: PiForgeApi = {
   listCustomProviders: () => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_LIST),
   saveCustomProvider: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_SAVE, request),
   deleteCustomProvider: (id: string) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_DELETE, id),
-  listProviderTemplates: () => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_TEMPLATES),
   probeProvider: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_PROBE, request),
   fetchProviderModels: (request) => ipcRenderer.invoke(IPC.CUSTOM_PROVIDER_FETCH_MODELS, request),
 

@@ -28,7 +28,6 @@ import type {
   PackageInfo,
   PackageProgress,
   PackageResult,
-  ProviderTemplate,
   ResourcesSnapshot,
   SessionMeta,
   SessionSummary,
@@ -60,7 +59,6 @@ type InboundMessage =
   | { type: 'session_set_thinking'; level: string }
   | { type: 'session_set_model'; providerId: string; modelId: string }
   | { type: 'model_list'; requestId: string }
-  | { type: 'provider_templates'; requestId: string }
   | { type: 'approval_mode'; mode: ApprovalMode }
   | { type: 'session_new' }
   | { type: 'session_switch'; sessionPath: string }
@@ -101,7 +99,6 @@ type OutboundMessage =
   | { type: 'session_list_all_result'; requestId: string; sessions: SessionListItem[] }
   | { type: 'session_meta_result'; requestId: string; meta: SessionMeta }
   | { type: 'model_list_result'; requestId: string; models: ModelListItem[]; current: { providerId: string; modelId: string } }
-  | { type: 'provider_templates_result'; requestId: string; templates: ProviderTemplate[] }
   | { type: 'session_messages_result'; requestId: string; messages: SessionHistoryMessage[] }
   | { type: 'settings_snapshot'; requestId: string; snapshot: SettingsSnapshot }
   | { type: 'settings_write_result'; requestId: string; result: SettingsWriteResult }
@@ -316,30 +313,6 @@ async function applyProviderKeys(): Promise<void> {
     }
   }
 }
-
-/** 供应商类型模板：从内置目录里每个 provider 取一个模型推断 baseUrl / api */
-function listProviderTemplates(): ProviderTemplate[] {
-  if (!modelRuntime) return []
-  try {
-    const seen = new Set<string>()
-    const templates: ProviderTemplate[] = []
-    for (const model of modelRuntime.getModels()) {
-      const id = String(model.provider)
-      if (seen.has(id)) continue
-      seen.add(id)
-      templates.push({
-        id,
-        name: id,
-        baseUrl: model.baseUrl ?? '',
-        api: String(model.api ?? '')
-      })
-    }
-    return templates.sort((a, b) => a.id.localeCompare(b.id))
-  } catch {
-    return []
-  }
-}
-
 /** 可用模型清单（来自共享的模型运行时）。
  *
  * 只列「有凭证可用」的 provider/模型：全量目录（catalog）包含几十个 provider，
@@ -450,15 +423,6 @@ async function handle(message: InboundMessage): Promise<void> {
       requestId: message.requestId,
       models: listModels(),
       current: { ...modelSelection }
-    })
-    return
-  }
-
-  if (message.type === 'provider_templates') {
-    post({
-      type: 'provider_templates_result',
-      requestId: message.requestId,
-      templates: listProviderTemplates()
     })
     return
   }

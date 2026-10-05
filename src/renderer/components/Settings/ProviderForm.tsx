@@ -1,7 +1,8 @@
-import { useMemo, useState, type JSX } from 'react'
+import { useMemo, useRef, useState, type JSX } from 'react'
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Download,
   Eye,
   EyeOff,
@@ -10,9 +11,10 @@ import {
   RotateCcw,
   Zap
 } from 'lucide-react'
-import type { CustomModelEntry, CustomProvider, ProviderTemplate } from '@shared/ipc-types'
+import type { CustomModelEntry, CustomProvider } from '@shared/ipc-types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
+import { PROVIDER_TYPES, type ProviderType } from '@renderer/lib/provider-types'
 import { NoticeBlock } from './SettingsLayout'
 import { cn } from '@renderer/lib/utils'
 
@@ -34,16 +36,16 @@ export function previewEndpoint(baseUrl: string, api: string): string {
 
 export function ProviderForm({
   provider,
-  templates,
   onCancel,
   onSaved
 }: {
   provider: CustomProvider | null
-  templates: ProviderTemplate[]
   onCancel: () => void
   onSaved: () => void
 }): JSX.Element {
-  const [templateId, setTemplateId] = useState(provider?.templateProviderId ?? '')
+  const [typeKey, setTypeKey] = useState(
+    () => PROVIDER_TYPES.find((item) => item.providerId === provider?.templateProviderId)?.key ?? ''
+  )
   const [name, setName] = useState(provider?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? '')
   const [api, setApi] = useState(provider?.api ?? '')
@@ -59,13 +61,11 @@ export function ProviderForm({
   const enabledModels = useMemo(() => models.filter((model) => model.enabled), [models])
   const availableModels = useMemo(() => models.filter((model) => !model.enabled), [models])
 
-  const applyTemplate = (nextTemplateId: string): void => {
-    setTemplateId(nextTemplateId)
-    const template = templates.find((item) => item.id === nextTemplateId)
-    if (!template) return
-    if (!baseUrl.trim()) setBaseUrl(template.baseUrl)
-    if (!api.trim()) setApi(template.api)
-    if (!name.trim()) setName(`${template.name}（自定义）`)
+  const applyType = (type: ProviderType): void => {
+    setTypeKey(type.key)
+    setBaseUrl(type.baseUrl)
+    setApi(type.api)
+    if (!name.trim()) setName(type.label)
   }
 
   const addModel = (entry: CustomModelEntry): void => {
@@ -127,7 +127,7 @@ export function ProviderForm({
         id: provider?.id,
         provider: {
           name: name.trim() || '未命名供应商',
-          templateProviderId: templateId || null,
+          templateProviderId: PROVIDER_TYPES.find((item) => item.key === typeKey)?.providerId ?? null,
           baseUrl,
           api,
           enabled,
@@ -168,19 +168,8 @@ export function ProviderForm({
         </header>
 
         <div className="divide-y divide-border">
-          <Field label="供应商类型" hint="选择内置类型可预填 Base URL 与 API 协议">
-            <select
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
-              value={templateId}
-              onChange={(event) => applyTemplate(event.target.value)}
-            >
-              <option value="">（自定义）</option>
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.id}
-                </option>
-              ))}
-            </select>
+          <Field label="供应商类型" hint="选择类型会预填 Base URL 与 API 协议">
+            <ProviderTypeSelect value={typeKey} onChange={applyType} />
           </Field>
 
           <Field label="供应商名称" hint="用于生成内部标识；重名会自动追加后缀">
@@ -201,7 +190,7 @@ export function ProviderForm({
             />
           </Field>
 
-          <Field label="API 协议" hint="留空则由供应商类型推断">
+          <Field label="API 协议" hint="由供应商类型预填，可手动修改">
             <Input
               className="h-8 text-xs"
               value={api}
@@ -302,9 +291,7 @@ export function ProviderForm({
                   title={`${model.id}（点击停用）`}
                   onClick={() =>
                     setModels((prev) =>
-                      prev.map((item) =>
-                        item.id === model.id ? { ...item, enabled: false } : item
-                      )
+                      prev.map((item) => (item.id === model.id ? { ...item, enabled: false } : item))
                     )
                   }
                   className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-[11px] text-foreground hover:bg-accent/70"
@@ -345,9 +332,7 @@ export function ProviderForm({
                   title={`${model.id}（点击启用）`}
                   onClick={() =>
                     setModels((prev) =>
-                      prev.map((item) =>
-                        item.id === model.id ? { ...item, enabled: true } : item
-                      )
+                      prev.map((item) => (item.id === model.id ? { ...item, enabled: true } : item))
                     )
                   }
                   className="flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-primary hover:text-foreground"
@@ -411,6 +396,98 @@ export function ProviderForm({
         </div>
       </section>
     </div>
+  )
+}
+
+/** 供应商类型下拉：图标 + 名称 + 选中标记（原生 select 无法承载图标） */
+function ProviderTypeSelect({
+  value,
+  onChange
+}: {
+  value: string
+  onChange: (type: ProviderType) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const selected = PROVIDER_TYPES.find((item) => item.key === value) ?? null
+
+  const closeSoon = (): void => {
+    // 让点击列表项的 onClick 先执行
+    setTimeout(() => setOpen(false), 0)
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onBlur={(event) => {
+        if (!ref.current?.contains(event.relatedTarget as Node)) setOpen(false)
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-8 w-full items-center gap-2 rounded-md border border-border bg-background px-2 text-left text-xs transition-colors hover:border-ring"
+      >
+        {selected ? (
+          <>
+            <TypeIcon type={selected} />
+            <span className="truncate">{selected.label}</span>
+          </>
+        ) : (
+          <span className="truncate text-muted-foreground">选择供应商类型…</span>
+        )}
+        <ChevronDown className="ml-auto size-3.5 shrink-0 opacity-60" />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+        >
+          {PROVIDER_TYPES.map((type) => {
+            const active = type.key === value
+            return (
+              <button
+                key={type.key}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(type)
+                  closeSoon()
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                  active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
+                )}
+              >
+                <TypeIcon type={type} />
+                <span className="min-w-0 flex-1 truncate">{type.label}</span>
+                {active && <Check className="size-3.5 shrink-0 text-primary" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TypeIcon({ type }: { type: ProviderType }): JSX.Element {
+  const Icon = type.icon
+  return (
+    <span
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center rounded bg-accent/70',
+        type.colorClass
+      )}
+    >
+      <Icon className="size-3" />
+    </span>
   )
 }
 
